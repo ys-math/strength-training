@@ -2,12 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Data-viz palette (dark-mode primary), per the dataviz skill reference instance.
-   Roles are referenced by CSS var so light/dark values swap in one place. */
-:root {
+/* Data-viz palette per UI theme, per the dataviz skill reference instance.
+   Roles are referenced by CSS var so switching themes is a single
+   data-theme attribute change (set on <html> by useTheme). */
+[data-theme='modern-dark'] {
   color-scheme: dark;
 
-  /* Surfaces & ink (dark) */
+  /* Surfaces & ink */
   --page:           #0d0d0d;
   --surface-1:      #1a1a19;
   --text-primary:   #ffffff;
@@ -16,9 +17,10 @@
   --gridline:       #2c2c2a;
   --baseline:       #383835;
   --border:         rgba(255, 255, 255, 0.10);
+  --hover-tint:     rgba(255, 255, 255, 0.04);
   --delta-good:     #0ca30c;
 
-  /* Categorical lift colors (dark steps) */
+  /* Categorical lift colors */
   --lift-bp:  #3987e5; /* blue   — Bench Press   */
   --lift-sq:  #199e70; /* aqua   — Squat         */
   --lift-dl:  #c98500; /* yellow — Deadlift      */
@@ -30,6 +32,87 @@
   --seq-2: #256abf;
   --seq-3: #3987e5;
   --seq-4: #6da7ec;
+}
+
+[data-theme='modern-light'] {
+  color-scheme: light;
+
+  --page:           #f7f7f5;
+  --surface-1:      #ffffff;
+  --text-primary:   #141412;
+  --text-secondary: #46453e;
+  --text-muted:     #7a786e;
+  --gridline:       #e7e6e1;
+  --baseline:       #d4d2c9;
+  --border:         rgba(0, 0, 0, 0.08);
+  --hover-tint:     rgba(0, 0, 0, 0.04);
+  --delta-good:     #0a8f0a;
+
+  --lift-bp:  #2166c9;
+  --lift-sq:  #0f8a63;
+  --lift-dl:  #b06f00;
+  --lift-ohp: #087a08;
+
+  --seq-0: #e9e8e3;
+  --seq-1: #bcd4f2;
+  --seq-2: #7fa8e0;
+  --seq-3: #3987e5;
+  --seq-4: #1a56ad;
+}
+
+[data-theme='cozy'] {
+  color-scheme: light;
+
+  /* Warm paper & wood tones. */
+  --page:           #f2e8da;
+  --surface-1:      #fbf3e7;
+  --text-primary:   #3d2b1f;
+  --text-secondary: #6b5240;
+  --text-muted:     #9c8570;
+  --gridline:       #e3d3ba;
+  --baseline:       #d2bd9c;
+  --border:         rgba(107, 58, 26, 0.15);
+  --hover-tint:     rgba(107, 58, 26, 0.06);
+  --delta-good:     #4c7a3a;
+
+  --lift-bp:  #b5563a; /* terracotta */
+  --lift-sq:  #5c8a52; /* sage       */
+  --lift-dl:  #c08a2e; /* mustard    */
+  --lift-ohp: #7a5ea8; /* plum       */
+
+  --seq-0: #ece0cd;
+  --seq-1: #dbb98c;
+  --seq-2: #c99a5c;
+  --seq-3: #b5563a;
+  --seq-4: #8a3b26;
+}
+
+[data-theme='pixel'] {
+  color-scheme: dark;
+
+  /* Retro arcade / RPG palette. */
+  --page:           #0f0a1e;
+  --surface-1:      #1b1436;
+  --text-primary:   #f4f4f0;
+  --text-secondary: #b7aee0;
+  --text-muted:     #7e76ab;
+  --gridline:       #362a5e;
+  --baseline:       #4a3d7a;
+  --border:         #5a4a9e;
+  --hover-tint:     rgba(255, 255, 255, 0.06);
+  --delta-good:     #4dff88;
+  --pixel-shadow:   rgba(0, 0, 0, 0.55);
+
+  --lift-bp:  #ff5d73; /* fire   — Bench Press   */
+  --lift-sq:  #4dff88; /* earth  — Squat         */
+  --lift-dl:  #f2a900; /* gold   — Deadlift      */
+  --lift-ohp: #4dc8ff; /* ice    — Overhead Press*/
+
+  --seq-0: #241a45;
+  --seq-1: #3a2a7a;
+  --seq-2: #5b3fae;
+  --seq-3: #8a5cff;
+  --seq-4: #c299ff;
 }
 
 html,
@@ -44,4 +127,45 @@ body {
   color: var(--text-primary);
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Pixel RPG flourishes: retro type, square corners, chunky drop shadows,
+   and a faint CRT scanline overlay. */
+[data-theme='pixel'] body {
+  font-family: 'VT323', ui-monospace, monospace;
+  letter-spacing: 0.3px;
+}
+
+[data-theme='pixel'] h1 {
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  font-size: 1.05rem;
+  line-height: 1.7;
+  letter-spacing: 0.5px;
+}
+
+[data-theme='pixel'] .rounded-2xl,
+[data-theme='pixel'] .rounded-lg,
+[data-theme='pixel'] .rounded-full,
+[data-theme='pixel'] .rounded-sm {
+  border-radius: 0;
+}
+
+[data-theme='pixel'] .rounded-2xl,
+[data-theme='pixel'] .rounded-lg {
+  box-shadow: 4px 4px 0 0 var(--pixel-shadow);
+}
+
+[data-theme='pixel'] body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.15) 0px,
+    rgba(0, 0, 0, 0.15) 1px,
+    transparent 1px,
+    transparent 3px
+  );
 }

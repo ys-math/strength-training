@@ -37,7 +37,7 @@ export default function VolumeChart({ rows }: { rows: SetRow[] }) {
               tickFormatter={(v: number) => (v >= 1000 ? `${v / 1000}t` : `${v}`)}
             />
             <Tooltip
-              cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+              cursor={{ fill: 'var(--hover-tint)' }}
               content={<ChartTooltip valueFormatter={fmtTonnage} />}
             />
             {LIFTS.map((lift) => (
