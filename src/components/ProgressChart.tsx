@@ -9,16 +9,16 @@ import {
   YAxis,
 } from 'recharts'
 import { LIFTS, type LiftKey } from '../lib/types'
-import { maxWeightSeries, type E1rmPoint } from '../lib/metrics'
+import { cumulativeSeries, e1rmSeries, type E1rmPoint } from '../lib/metrics'
 import { fmtDate, fmtLongDate } from '../lib/format'
 import type { SetRow } from '../lib/types'
+import type { MetricMode } from '../lib/mode'
 import ChartCard from './ChartCard'
 import ChartTooltip from './Tooltip'
 
 // Direct end-label: renders the lift code at its final defined point only.
-// `dyExtra` nudges labels apart when two lifts end at the same weight (common
-// here — kg values are discrete plate increments, unlike the continuous e1RM
-// formula — and would otherwise render one directly on top of the other).
+// `dyExtra` nudges labels apart when two lifts end at the same value (common in
+// max-weight mode, where kg are discrete plate increments) so they don't overlap.
 function makeEndLabel(lastIndex: number, color: string, text: string, dyExtra: number) {
   return function EndLabel(props: { x?: number; y?: number; index?: number }) {
     if (props.index !== lastIndex || props.x == null || props.y == null) return null
@@ -30,13 +30,9 @@ function makeEndLabel(lastIndex: number, color: string, text: string, dyExtra: n
   }
 }
 
-// Groups lifts whose final plotted value ties (within rounding) and spreads
-// their end-labels vertically so they don't overlap.
-function endLabelOffsets(
-  data: E1rmPoint[],
-  lastIndex: Record<string, number>,
-  keys: LiftKey[],
-): Record<string, number> {
+// Groups lifts whose final plotted value ties (within rounding) and spreads their
+// end-labels vertically so they don't render on top of one another.
+function endLabelOffsets(data: E1rmPoint[], lastIndex: Record<string, number>, keys: LiftKey[]): Record<string, number> {
   const groups = new Map<number, string[]>()
   for (const key of keys) {
     const idx = lastIndex[key]
@@ -58,8 +54,11 @@ function endLabelOffsets(
   return offsets
 }
 
-export default function MaxWeightChart({ rows }: { rows: SetRow[] }) {
-  const data = useMemo(() => maxWeightSeries(rows), [rows])
+export default function ProgressChart({ rows, mode }: { rows: SetRow[]; mode: MetricMode }) {
+  const data = useMemo(
+    () => (mode === 'e1rm' ? e1rmSeries(rows) : cumulativeSeries(rows, 'maxWeight')),
+    [rows, mode],
+  )
   const [hidden, setHidden] = useState<Set<LiftKey>>(new Set())
 
   const lastIndex = useMemo(() => {
@@ -97,11 +96,7 @@ export default function MaxWeightChart({ rows }: { rows: SetRow[] }) {
             key={lift.key}
             onClick={() => toggle(lift.key)}
             className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition-opacity"
-            style={{
-              border: '1px solid var(--border)',
-              opacity: off ? 0.4 : 1,
-              color: 'var(--text-secondary)',
-            }}
+            style={{ border: '1px solid var(--border)', opacity: off ? 0.4 : 1, color: 'var(--text-secondary)' }}
           >
             <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: lift.color }} />
             {lift.label}
@@ -116,12 +111,15 @@ export default function MaxWeightChart({ rows }: { rows: SetRow[] }) {
     </div>
   )
 
+  const title = mode === 'e1rm' ? 'Estimated 1RM over time' : 'Max weight lifted'
+  const subtitle =
+    mode === 'e1rm'
+      ? 'Epley formula · best working set per session'
+      : 'Actual heaviest set to date, per lift — not an estimate'
+  const lineType = mode === 'e1rm' ? 'monotone' : 'stepAfter'
+
   return (
-    <ChartCard
-      title="Max weight lifted"
-      subtitle="Actual heaviest set to date, per lift — not an estimate"
-      right={legend}
-    >
+    <ChartCard title={title} subtitle={subtitle} right={legend}>
       <div style={{ width: '100%', height: 340 }}>
         <ResponsiveContainer>
           <LineChart data={data} margin={{ top: 8, right: 44, bottom: 4, left: 4 }}>
@@ -138,21 +136,17 @@ export default function MaxWeightChart({ rows }: { rows: SetRow[] }) {
               tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
               stroke="var(--baseline)"
               tickFormatter={(v: number) => `${v}`}
-              unit=""
             />
             <Tooltip
               content={
-                <ChartTooltip
-                  labelFormatter={fmtLongDate}
-                  valueFormatter={(v) => `${Math.round(v * 10) / 10} kg`}
-                />
+                <ChartTooltip labelFormatter={fmtLongDate} valueFormatter={(v) => `${Math.round(v * 10) / 10} kg`} />
               }
             />
             {LIFTS.map((lift) =>
               hidden.has(lift.key) ? null : (
                 <Line
                   key={lift.key}
-                  type="stepAfter"
+                  type={lineType}
                   dataKey={lift.key}
                   name={lift.label}
                   stroke={lift.color}

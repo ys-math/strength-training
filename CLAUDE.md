@@ -40,10 +40,21 @@ strong_workouts.csv ?raw
   `parseWorkouts`. Dates arrive as `"YYYY-MM-DD HH:MM:SS"` (local). Sets are keyed by
   `dateKey` (YYYY-MM-DD).
 - **`src/lib/metrics.ts`** — all aggregation, pure and unit-testable: `liftSessions`,
-  `liftPR`, `e1rmSeries`, `big4Series` (sum of each lift's best-e1RM-to-date, only climbs),
-  `weeklyVolume` (ISO week), `dailyActivity`, `overallStats`.
+  `liftPR`, `e1rmSeries` (per-session best e1RM), `cumulativeSeries(rows, mode)` and
+  `big4Series(rows, mode)` (each lift's / the summed best-to-date value, only climbs),
+  `currentPrev`, `weeklyVolume` (ISO week), `dailyActivity`, `sessionDetails`, `overallStats`.
 - **`src/components/`** — presentational; each takes `rows: SetRow[]` and derives via
   `useMemo`. `Dashboard.tsx` composes them.
+
+### Metric mode (est. 1RM vs. actual max weight)
+
+A global toggle switches the primary metric shown by `StatCards` (hero + per-lift cards,
+each with a `Sparkline`) and the main `ProgressChart`. Defined in `src/lib/mode.ts`
+(`MetricMode = 'e1rm' | 'maxWeight'`, `MODES`, `DEFAULT_MODE`, `MODE_STORAGE_KEY`);
+`src/hooks/useMetricMode.ts` reads/writes `localStorage`; `ModeToggle.tsx` is the header
+control. Mode-aware metrics take `mode` and read the right per-session value via an internal
+`sessionMetric` (`bestE1rm` or `maxWeight`). In `e1rm` mode `ProgressChart` shows per-session
+best e1RM (monotone lines); in `maxWeight` mode it shows best-to-date PRs (`stepAfter` lines).
 
 ### Theming
 
@@ -84,7 +95,7 @@ theme.
 - **New lift:** add an entry to `LIFTS` in `types.ts` (key, label, exact `exercise` string,
   a `--lift-*` CSS var color) and a matching var in **every `[data-theme]` block** in
   `index.css`. Metrics and StatCards pick it up automatically; the `LiftKey`-typed fields in
-  `e1rmSeries`/`weeklyVolume` need the new key added.
+  `e1rmSeries`/`cumulativeSeries`/`weeklyVolume` need the new key added.
 - **New theme:** add it to `THEMES` in `src/lib/theme.ts`, add a `[data-theme='…']` block in
   `index.css`, and update the theme-id list in the inline script in `index.html`.
 - **New chart:** wrap it in `ChartCard`, reuse `ChartTooltip`, add a `metrics.ts` function

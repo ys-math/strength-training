@@ -10,12 +10,15 @@ CSV export. Modern dark UI, deployed free on GitHub Pages.
 
 ## What it shows
 
-- **Big 4 total** — combined estimated 1RM across the four lifts, one number that climbs.
-- **Estimated 1RM over time** — Epley e1RM per lift, the headline progress chart.
-- **PR cards** — best est. 1RM and heaviest set for each lift.
+- **Metric toggle** — flip the headline number, the PR cards, and the main chart between
+  **estimated 1RM** and **actual max weight lifted**; your choice is remembered.
+- **Big 4 total** — combined est. 1RM (or max weight) across the four lifts, one climbing number.
+- **Progress over time** — per-lift headline chart (Epley e1RM per session, or max-weight PRs).
+- **PR cards** — the PR in the active metric, a from-previous-PR delta, and an inline sparkline.
 - **Weekly volume** — working tonnage (weight × reps), warmup sets excluded.
 - **Training frequency** — GitHub-style calendar heatmap of working sets per day.
 - **Per-lift detail** — est. 1RM vs. heaviest set for any single lift.
+- **Session log** — every exercise, set, and volume per workout.
 - **Themes** — switch between Modern Dark, Modern Light, and Cozy; your choice is remembered.
 
 Estimated 1RM uses the Epley formula: `weight × (1 + reps / 30)`.
@@ -138,19 +141,23 @@ src/
   lib/
     types.ts                 the four LIFTS (BP/SQ/DL/OHP) + row/session types
     parse.ts                 CSV → typed SetRow[] (Epley e1RM, warmup flag)
-    metrics.ts               e1RM series, PRs, Big-4 total, weekly volume, frequency
+    metrics.ts               e1RM / max-weight series, PRs, Big-4 total, volume, frequency
     format.ts                date / kg / tonnage display helpers
     theme.ts                 the selectable UI themes (dark / light / cozy)
+    mode.ts                  metric mode (est. 1RM vs. actual max weight)
   hooks/
     useTheme.ts              reads/writes the active theme (data-theme + localStorage)
+    useMetricMode.ts         reads/writes the active metric mode (localStorage)
   components/
     Dashboard.tsx            page layout, composes everything
-    StatCards.tsx            Big-4 total + per-lift PR cards
-    E1RMChart.tsx            headline multi-line est. 1RM chart
+    StatCards.tsx            Big-4 total + per-lift PR cards, each with a sparkline
+    ProgressChart.tsx        headline chart; toggles est. 1RM ⇄ max weight
     VolumeChart.tsx          weekly stacked tonnage bars
     FrequencyHeatmap.tsx     calendar heatmap (plain divs, not Recharts)
     LiftDetail.tsx           per-lift est. 1RM vs. heaviest set
-    ThemeSwitcher.tsx        theme picker in the header
+    ModeToggle.tsx           est. 1RM / max weight switch in the header
+    ThemeSwitcher.tsx        theme picker in the footer
+    Sparkline.tsx            tiny inline SVG trend line for stat cards
     ChartCard.tsx / Tooltip.tsx   shared chart chrome
 index.html                   inline pre-paint script sets the saved theme (no flash)
 .github/workflows/deploy.yml  build + deploy to GitHub Pages on push to main

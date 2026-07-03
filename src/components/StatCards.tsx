@@ -1,33 +1,44 @@
 import { useMemo } from 'react'
 import { LIFTS, type SetRow } from '../lib/types'
-import { big4Series, liftPR, liftSessions, round1 } from '../lib/metrics'
+import { big4Series, cumulativeSeries, currentPrev, liftPR, liftSessions, round1 } from '../lib/metrics'
 import { fmtKg, fmtLongDate } from '../lib/format'
+import type { MetricMode } from '../lib/mode'
+import Sparkline from './Sparkline'
 
-export default function StatCards({ rows }: { rows: SetRow[] }) {
-  const big4 = useMemo(() => big4Series(rows), [rows])
+export default function StatCards({ rows, mode }: { rows: SetRow[]; mode: MetricMode }) {
+  const big4 = useMemo(() => big4Series(rows, mode), [rows, mode])
+  const cumulative = useMemo(() => cumulativeSeries(rows, mode), [rows, mode])
+
   const cards = useMemo(
     () =>
       LIFTS.map((lift) => {
         const sessions = liftSessions(rows, lift.key)
-        return { lift, pr: liftPR(sessions), latest: sessions[sessions.length - 1] }
+        const values = cumulative
+          .map((p) => p[lift.key])
+          .filter((v): v is number => v != null)
+        const { current, prev } = currentPrev(values)
+        return { lift, pr: liftPR(sessions), latest: sessions[sessions.length - 1], values, current, prev }
       }),
-    [rows],
+    [rows, cumulative],
   )
 
-  const delta = round1(big4.current - big4.prev)
+  const big4Delta = round1(big4.current - big4.prev)
+  const big4Values = big4.series.map((p) => p.total)
+  const heroTitle = mode === 'e1rm' ? 'Big 4 total (est. 1RM)' : 'Big 4 total (max weight)'
+  const cardLabel = mode === 'e1rm' ? 'est. 1RM PR' : 'max weight PR'
 
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-      {/* Hero: Big-4 combined estimated total */}
+      {/* Hero: Big-4 combined total in the selected metric */}
       <div
-        className="col-span-2 rounded-2xl p-5 lg:col-span-1"
+        className="col-span-2 flex flex-col rounded-2xl p-5 lg:col-span-1"
         style={{
           background: 'linear-gradient(160deg, rgba(57,135,229,0.18), var(--surface-1))',
           border: '1px solid var(--border)',
         }}
       >
         <div className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-          Big 4 total (est. 1RM)
+          {heroTitle}
         </div>
         <div className="mt-1 text-3xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
           {Math.round(big4.current)}
@@ -35,51 +46,67 @@ export default function StatCards({ rows }: { rows: SetRow[] }) {
             kg
           </span>
         </div>
-        {delta > 0 && (
+        {big4Delta > 0 && (
           <div className="mt-1 text-xs font-medium" style={{ color: 'var(--delta-good)' }}>
-            ▲ {delta} kg from previous best
+            ▲ {big4Delta} kg from previous best
           </div>
         )}
+        <div className="mt-auto pt-3">
+          <Sparkline values={big4Values} color="var(--lift-bp)" />
+        </div>
       </div>
 
-      {cards.map(({ lift, pr, latest }) => (
-        <div
-          key={lift.key}
-          className="rounded-2xl p-4"
-          style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
-        >
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: lift.color }} />
-            <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
-              {lift.key}
-            </span>
-          </div>
-          <div className="mt-2 text-2xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
-            {pr ? Math.round(pr.maxE1rm) : '—'}
-            <span className="ml-1 text-sm font-medium" style={{ color: 'var(--text-muted)' }}>
-              kg
-            </span>
-          </div>
-          <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            est. 1RM PR
-          </div>
-          {pr && (
-            <div className="mt-2 border-t pt-2 text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-              <div>
-                Heaviest: <span style={{ color: 'var(--text-secondary)' }}>{fmtKg(pr.maxWeight)} × {pr.maxWeightReps}</span>
-              </div>
-              {pr.prevMaxWeight > 0 && pr.maxWeight > pr.prevMaxWeight && (
-                <div className="mt-0.5 font-medium" style={{ color: 'var(--delta-good)' }}>
-                  ▲ {round1(pr.maxWeight - pr.prevMaxWeight)} kg from previous PR
-                </div>
-              )}
-              {latest && (
-                <div className="mt-0.5">Last: {fmtLongDate(latest.dateKey)}</div>
-              )}
+      {cards.map(({ lift, pr, latest, values, current, prev }) => {
+        const delta = round1(current - prev)
+        return (
+          <div
+            key={lift.key}
+            className="flex flex-col rounded-2xl p-4"
+            style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+          >
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: lift.color }} />
+              <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                {lift.key}
+              </span>
             </div>
-          )}
-        </div>
-      ))}
+            <div className="mt-2 text-2xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
+              {current > 0 ? Math.round(current) : '—'}
+              <span className="ml-1 text-sm font-medium" style={{ color: 'var(--text-muted)' }}>
+                kg
+              </span>
+            </div>
+            <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              {cardLabel}
+            </div>
+            {pr && (
+              <div
+                className="mt-2 border-t pt-2 text-[11px]"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+              >
+                {mode === 'e1rm' ? (
+                  <div>
+                    Heaviest: <span style={{ color: 'var(--text-secondary)' }}>{fmtKg(pr.maxWeight)} × {pr.maxWeightReps}</span>
+                  </div>
+                ) : (
+                  <div>
+                    <span style={{ color: 'var(--text-secondary)' }}>{pr.maxWeightReps} reps</span> · est. 1RM {Math.round(pr.maxE1rm)} kg
+                  </div>
+                )}
+                {delta > 0 && (
+                  <div className="mt-0.5 font-medium" style={{ color: 'var(--delta-good)' }}>
+                    ▲ {delta} kg from previous PR
+                  </div>
+                )}
+                {latest && <div className="mt-0.5">Last: {fmtLongDate(latest.dateKey)}</div>}
+              </div>
+            )}
+            <div className="mt-auto pt-2">
+              <Sparkline values={values} color={lift.color} />
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

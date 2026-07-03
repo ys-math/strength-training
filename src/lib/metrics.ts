@@ -1,7 +1,23 @@
 import { LIFTS, type LiftKey, type LiftPR, type LiftSession, type SetRow } from './types'
+import type { MetricMode } from './mode'
 
 export const round1 = (n: number) => Math.round(n * 10) / 10
 export const round0 = (n: number) => Math.round(n)
+
+// The per-session value a given metric mode reads off a LiftSession.
+const sessionMetric = (s: LiftSession, mode: MetricMode) => (mode === 'e1rm' ? s.bestE1rm : s.maxWeight)
+
+// From a series of "best-to-date" values (non-decreasing), the current value and
+// the previous record just before the most recent increase — for a progress delta.
+export function currentPrev(values: number[]): { current: number; prev: number } {
+  const current = values.length ? values[values.length - 1] : 0
+  let prev = current
+  for (let i = values.length - 2; i >= 0; i--) {
+    prev = values[i]
+    if (values[i] < current) break
+  }
+  return { current, prev }
+}
 
 // Aggregate a lift's sets into one entry per workout date, chronologically.
 export function liftSessions(rows: SetRow[], lift: LiftKey): LiftSession[] {
@@ -90,22 +106,22 @@ export function e1rmSeries(rows: SetRow[]): E1rmPoint[] {
   return [...byDate.values()].sort((a, b) => a.ts - b.ts)
 }
 
-// Sum of each lift's *best-to-date* e1RM, tracked over time so it only climbs.
+// Sum of each lift's *best-to-date* value (in the chosen metric), tracked over
+// time so it only climbs.
 export interface Big4Point {
   dateKey: string
   ts: number
   total: number
 }
 
-export function big4Series(rows: SetRow[]): { series: Big4Point[]; current: number; prev: number } {
+export function big4Series(rows: SetRow[], mode: MetricMode): { series: Big4Point[]; current: number; prev: number } {
   const dates = [...new Set(rows.filter((r) => r.lift).map((r) => r.dateKey))].sort()
   const bestToDate: Record<LiftKey, number> = { BP: 0, SQ: 0, DL: 0, OHP: 0 }
 
-  // Precompute best-e1rm per lift per date.
   const byLiftDate = new Map<string, number>()
   for (const lift of LIFTS) {
     for (const s of liftSessions(rows, lift.key)) {
-      byLiftDate.set(`${lift.key}|${s.dateKey}`, s.bestE1rm)
+      byLiftDate.set(`${lift.key}|${s.dateKey}`, sessionMetric(s, mode))
     }
   }
 
@@ -116,34 +132,23 @@ export function big4Series(rows: SetRow[]): { series: Big4Point[]; current: numb
       if (v && v > bestToDate[lift.key]) bestToDate[lift.key] = v
     }
     const total = LIFTS.reduce((sum, l) => sum + bestToDate[l.key], 0)
-    const ts = new Date(dateKey).getTime()
-    series.push({ dateKey, ts, total: round1(total) })
+    series.push({ dateKey, ts: new Date(dateKey).getTime(), total: round1(total) })
   }
 
-  const current = series.length ? series[series.length - 1].total : 0
-  // Previous distinct total (before the most recent increase), for a delta.
-  let prev = current
-  for (let i = series.length - 2; i >= 0; i--) {
-    if (series[i].total < current) {
-      prev = series[i].total
-      break
-    }
-    prev = series[i].total
-  }
+  const { current, prev } = currentPrev(series.map((p) => p.total))
   return { series, current, prev }
 }
 
-// Each lift's *best-to-date* actual max weight, tracked over time so it only
-// climbs — the true-weight counterpart to e1rmSeries's estimated figures.
-// Mirrors big4Series's bestToDate scan, but per-lift rather than summed.
-export function maxWeightSeries(rows: SetRow[]): E1rmPoint[] {
+// Each lift's *best-to-date* value in the chosen metric, per workout date, so
+// each line only climbs. Used for the max-weight main chart and every sparkline.
+export function cumulativeSeries(rows: SetRow[], mode: MetricMode): E1rmPoint[] {
   const dates = [...new Set(rows.filter((r) => r.lift).map((r) => r.dateKey))].sort()
   const bestToDate: Record<LiftKey, number> = { BP: 0, SQ: 0, DL: 0, OHP: 0 }
 
   const byLiftDate = new Map<string, number>()
   for (const lift of LIFTS) {
     for (const s of liftSessions(rows, lift.key)) {
-      byLiftDate.set(`${lift.key}|${s.dateKey}`, s.maxWeight)
+      byLiftDate.set(`${lift.key}|${s.dateKey}`, sessionMetric(s, mode))
     }
   }
 
@@ -155,7 +160,7 @@ export function maxWeightSeries(rows: SetRow[]): E1rmPoint[] {
     }
     const point: E1rmPoint = { dateKey, ts: new Date(dateKey).getTime() }
     for (const lift of LIFTS) {
-      if (bestToDate[lift.key] > 0) point[lift.key] = bestToDate[lift.key]
+      if (bestToDate[lift.key] > 0) point[lift.key] = round1(bestToDate[lift.key])
     }
     series.push(point)
   }

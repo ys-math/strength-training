@@ -2,17 +2,19 @@ import { useMemo } from 'react'
 import type { SetRow } from '../lib/types'
 import { overallStats } from '../lib/metrics'
 import { fmtLongDate } from '../lib/format'
+import { useMetricMode } from '../hooks/useMetricMode'
 import StatCards from './StatCards'
-import E1RMChart from './E1RMChart'
-import MaxWeightChart from './MaxWeightChart'
+import ProgressChart from './ProgressChart'
 import VolumeChart from './VolumeChart'
 import FrequencyHeatmap from './FrequencyHeatmap'
 import LiftDetail from './LiftDetail'
 import SessionLog from './SessionLog'
+import ModeToggle from './ModeToggle'
 import ThemeSwitcher from './ThemeSwitcher'
 
 export default function Dashboard({ rows }: { rows: SetRow[] }) {
   const stats = useMemo(() => overallStats(rows), [rows])
+  const { mode, setMode } = useMetricMode()
 
   if (rows.length === 0) {
     return (
@@ -24,20 +26,22 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
-          Strength Training Progress
-        </h1>
-        <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
-          Bench · Squat · Deadlift · Overhead Press &nbsp;·&nbsp; {fmtLongDate(stats.firstDate)} –{' '}
-          {fmtLongDate(stats.lastDate)}
-        </p>
+      <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+            Strength Training Progress
+          </h1>
+          <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
+            Bench · Squat · Deadlift · Overhead Press &nbsp;·&nbsp; {fmtLongDate(stats.firstDate)} –{' '}
+            {fmtLongDate(stats.lastDate)}
+          </p>
+        </div>
+        <ModeToggle mode={mode} setMode={setMode} />
       </header>
 
       <div className="space-y-4">
-        <StatCards rows={rows} />
-        <E1RMChart rows={rows} />
-        <MaxWeightChart rows={rows} />
+        <StatCards rows={rows} mode={mode} />
+        <ProgressChart rows={rows} mode={mode} />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <VolumeChart rows={rows} />
           <FrequencyHeatmap rows={rows} />
