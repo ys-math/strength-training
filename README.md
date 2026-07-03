@@ -19,6 +19,27 @@ CSV export. Modern dark UI, deployed free on GitHub Pages.
 
 Estimated 1RM uses the Epley formula: `weight × (1 + reps / 30)`.
 
+## RM reference table
+
+Percentage of 1RM by rep count, derived from the same Epley formula the dashboard
+uses (`%1RM = 100 / (1 + reps / 30)`). Handy for picking a working weight once you
+know your estimated 1RM.
+
+| Reps | % of 1RM |
+| ---: | -------: |
+|    1 |      97% |
+|    2 |      94% |
+|    3 |      91% |
+|    4 |      88% |
+|    5 |      86% |
+|    6 |      83% |
+|    7 |      81% |
+|    8 |      79% |
+|    9 |      77% |
+|   10 |      75% |
+|   11 |      73% |
+|   12 |      71% |
+
 ## Updating your data
 
 The whole workflow is a file swap:
