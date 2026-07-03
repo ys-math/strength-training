@@ -101,7 +101,9 @@
   --border:         #5a4a9e;
   --hover-tint:     rgba(255, 255, 255, 0.06);
   --delta-good:     #4dff88;
-  --pixel-shadow:   rgba(0, 0, 0, 0.55);
+  --pixel-shadow:      rgba(0, 0, 0, 0.6);
+  --pixel-frame-inner: #8a5cff;
+  --pixel-frame-outer: #05030a;
 
   --lift-bp:  #ff5d73; /* fire   — Bench Press   */
   --lift-sq:  #4dff88; /* earth  — Squat         */
@@ -129,11 +131,13 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Pixel RPG flourishes: retro type, square corners, chunky drop shadows,
-   and a faint CRT scanline overlay. */
+/* Pixel RPG flourishes: retro type, square corners, layered "dialog box"
+   frames, an arcade cursor on selected controls, and a CRT overlay. */
 [data-theme='pixel'] body {
   font-family: 'VT323', ui-monospace, monospace;
   letter-spacing: 0.3px;
+  -webkit-font-smoothing: none;
+  font-smooth: never;
 }
 
 [data-theme='pixel'] h1 {
@@ -143,6 +147,21 @@ body {
   letter-spacing: 0.5px;
 }
 
+[data-theme='pixel'] h2 {
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  font-size: 0.62rem;
+  line-height: 1.9;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* Hero stat readouts read like an RPG HUD counter (HP/gold digits). */
+[data-theme='pixel'] .text-3xl.tabular-nums,
+[data-theme='pixel'] .text-2xl.tabular-nums {
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  letter-spacing: 1px;
+}
+
 [data-theme='pixel'] .rounded-2xl,
 [data-theme='pixel'] .rounded-lg,
 [data-theme='pixel'] .rounded-full,
@@ -150,9 +169,41 @@ body {
   border-radius: 0;
 }
 
+/* Classic JRPG dialog-box bevel: a bright inner ring, a black outer ring,
+   and a hard offset shadow — no blur, no anti-aliased curves. */
 [data-theme='pixel'] .rounded-2xl,
 [data-theme='pixel'] .rounded-lg {
-  box-shadow: 4px 4px 0 0 var(--pixel-shadow);
+  box-shadow:
+    0 0 0 2px var(--pixel-frame-inner),
+    0 0 0 4px var(--pixel-frame-outer),
+    6px 6px 0 0 var(--pixel-shadow);
+}
+
+[data-theme='pixel'] .rounded-full {
+  box-shadow:
+    0 0 0 2px var(--pixel-frame-inner),
+    2px 2px 0 0 var(--pixel-shadow);
+}
+
+/* Retro UI snaps between states instead of easing. */
+[data-theme='pixel'] button {
+  transition: none;
+}
+
+/* Arcade menu cursor in front of the active selection. */
+[data-theme='pixel'] button[aria-pressed='true']::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 4px;
+}
+
+[data-theme='pixel'] body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9998;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.4) 100%);
 }
 
 [data-theme='pixel'] body::after {

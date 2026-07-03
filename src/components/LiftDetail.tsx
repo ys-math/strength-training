@@ -38,6 +38,7 @@ export default function LiftDetail({ rows }: { rows: SetRow[] }) {
           <button
             key={l.key}
             onClick={() => setSelected(l.key)}
+            aria-pressed={on}
             className="rounded-full px-2.5 py-1 text-xs font-semibold transition-colors"
             style={{
               border: '1px solid var(--border)',
