@@ -98,4 +98,15 @@ Push to `main` → `.github/workflows/deploy.yml` runs `npm ci && npm run build`
 
 ## Data update workflow (the user's normal loop)
 
-Re-export from Strong → replace root `strong_workouts.csv` → commit & push. No code change.
+On the user's Mac this is automated: `scripts/sync-data.sh`, run by the
+`com.ys-math.strength-training.sync` LaunchAgent (`scripts/*.plist`), watches
+`~/Library/Mobile Documents/com~apple~CloudDocs/StrongExports` for a new Strong export
+and — only if its content differs from the committed CSV — copies it to
+`strong_workouts.csv`, commits, and pushes to `main`. No code change involved; see the
+"Automatic sync via iCloud Drive" section in `README.md` for the one-time setup
+(Full Disk Access for `/bin/bash` + Terminal, since iCloud Drive is TCC-protected) and
+the manual fallback (replace the CSV, commit, push).
+
+If you touch `scripts/sync-data.sh`, keep it idempotent (hash-compare before
+committing — no empty commits) and keep the unpushed-commit retry check at the top
+(a failed `git push` must not look like "no change" on the next run).

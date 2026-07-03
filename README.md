@@ -80,6 +80,37 @@ to the nearest kg.
 
 ## Updating your data
 
+### Automatic sync via iCloud Drive (recommended, macOS)
+
+Strong has no auto-export or API, so exporting is still a manual tap — but everything
+after that is automatic:
+
+1. In the Strong app: **Export → Save to Files → iCloud Drive/StrongExports**.
+2. That's it. A background LaunchAgent notices the new file within seconds, commits it
+   as `strong_workouts.csv`, and pushes to `main` — which triggers the GitHub Actions
+   redeploy automatically.
+
+**One-time setup:**
+
+1. Create the folder **iCloud Drive/StrongExports** in Finder.
+2. Grant Full Disk Access to `/bin/bash` and to Terminal, since iCloud Drive is
+   privacy-protected and a background job needs explicit access:
+   **System Settings → Privacy & Security → Full Disk Access** → click **+** → press
+   `Cmd+Shift+G` → type `/bin/bash` → add it. Add **Terminal** the same way.
+3. Install the agent:
+   ```bash
+   cp scripts/com.ys-math.strength-training.sync.plist ~/Library/LaunchAgents/
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ys-math.strength-training.sync.plist
+   ```
+4. Watch it work: `tail -f ~/Library/Logs/strength-training-sync.log`.
+
+To pause or remove it:
+```bash
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.ys-math.strength-training.sync.plist
+```
+
+### Manual
+
 The whole workflow is a file swap:
 
 1. In the Strong app: **Settings → Export Data** → get `strong_workouts.csv`.
