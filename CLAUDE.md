@@ -45,6 +45,20 @@ strong_workouts.csv ?raw
 - **`src/components/`** — presentational; each takes `rows: SetRow[]` and derives via
   `useMemo`. `Dashboard.tsx` composes them.
 
+### Theming
+
+Three selectable UI themes — `modern-dark` (default), `modern-light`, `cozy` — defined in
+`src/lib/theme.ts` (`THEMES`, `DEFAULT_THEME`, `STORAGE_KEY`). Each theme is a
+`[data-theme='…']` block of CSS custom properties in `src/index.css`; `data-theme` on
+`<html>` selects one, so switching is a single attribute change (no re-render of colors).
+`src/hooks/useTheme.ts` reads/writes the attribute + `localStorage`; `ThemeSwitcher.tsx`
+is the picker in the header.
+
+**Gotcha:** `index.html` has an inline blocking script that sets `data-theme` before first
+paint (avoids a flash of the default theme). Its `STORAGE_KEY` string and theme-id list are
+duplicated there and **must stay in sync with `src/lib/theme.ts`** when you add/rename a
+theme.
+
 ## Conventions — keep these
 
 - **Units are kg.** Weights come straight from the CSV; no conversion.
@@ -53,11 +67,12 @@ strong_workouts.csv ?raw
   a max, so it's harmless).
 - **e1RM is Epley** (`weight * (1 + reps/30)`). If you add another formula, put it in
   `parse.ts`/`metrics.ts` and keep the display note in `Dashboard.tsx`'s footer in sync.
-- **Colors follow the dataviz skill's validated palette** (defined as CSS vars in
-  `src/index.css`: `--lift-bp/-sq/-dl/-ohp`, sequential `--seq-*`, ink/surface roles).
-  A lift's color follows the entity everywhere; don't hardcode hex in components — use the
-  `color` on its `LIFTS` entry or the CSS var. **Never build a dual-axis chart** (see
-  `LiftDetail`: e1RM and heaviest set share one kg axis on purpose).
+- **Colors follow the dataviz skill's validated palette**, exposed as CSS vars
+  (`--lift-bp/-sq/-dl/-ohp`, sequential `--seq-*`, ink/surface roles) and redefined per
+  theme block in `src/index.css`. A lift's color follows the entity everywhere; don't
+  hardcode hex in components — use the `color` on its `LIFTS` entry (a `var(--lift-*)`
+  reference) or the CSS var directly, so all three themes stay correct. **Never build a
+  dual-axis chart** (see `LiftDetail`: e1RM and heaviest set share one kg axis on purpose).
 - **Recharts marks must set `isAnimationActive={false}`.** Grow-in animation renders blank
   under throttled requestAnimationFrame (headless/screenshots, and a flash on load). All
   Lines/Areas/Bars here disable it — match that when adding charts.
@@ -67,9 +82,11 @@ strong_workouts.csv ?raw
 ## Adding a new lift or chart
 
 - **New lift:** add an entry to `LIFTS` in `types.ts` (key, label, exact `exercise` string,
-  a `--lift-*` CSS var color) and a matching var in `index.css`. Metrics and StatCards pick
-  it up automatically; the `LiftKey`-typed fields in `e1rmSeries`/`weeklyVolume` need the
-  new key added.
+  a `--lift-*` CSS var color) and a matching var in **every `[data-theme]` block** in
+  `index.css`. Metrics and StatCards pick it up automatically; the `LiftKey`-typed fields in
+  `e1rmSeries`/`weeklyVolume` need the new key added.
+- **New theme:** add it to `THEMES` in `src/lib/theme.ts`, add a `[data-theme='…']` block in
+  `index.css`, and update the theme-id list in the inline script in `index.html`.
 - **New chart:** wrap it in `ChartCard`, reuse `ChartTooltip`, add a `metrics.ts` function
   rather than aggregating inside the component.
 

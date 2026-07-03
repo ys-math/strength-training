@@ -16,6 +16,7 @@ CSV export. Modern dark UI, deployed free on GitHub Pages.
 - **Weekly volume** — working tonnage (weight × reps), warmup sets excluded.
 - **Training frequency** — GitHub-style calendar heatmap of working sets per day.
 - **Per-lift detail** — est. 1RM vs. heaviest set for any single lift.
+- **Themes** — switch between Modern Dark, Modern Light, and Cozy; your choice is remembered.
 
 Estimated 1RM uses the Epley formula: `weight × (1 + reps / 30)`.
 
@@ -108,6 +109,9 @@ src/
     parse.ts                 CSV → typed SetRow[] (Epley e1RM, warmup flag)
     metrics.ts               e1RM series, PRs, Big-4 total, weekly volume, frequency
     format.ts                date / kg / tonnage display helpers
+    theme.ts                 the selectable UI themes (dark / light / cozy)
+  hooks/
+    useTheme.ts              reads/writes the active theme (data-theme + localStorage)
   components/
     Dashboard.tsx            page layout, composes everything
     StatCards.tsx            Big-4 total + per-lift PR cards
@@ -115,7 +119,9 @@ src/
     VolumeChart.tsx          weekly stacked tonnage bars
     FrequencyHeatmap.tsx     calendar heatmap (plain divs, not Recharts)
     LiftDetail.tsx           per-lift est. 1RM vs. heaviest set
+    ThemeSwitcher.tsx        theme picker in the header
     ChartCard.tsx / Tooltip.tsx   shared chart chrome
+index.html                   inline pre-paint script sets the saved theme (no flash)
 .github/workflows/deploy.yml  build + deploy to GitHub Pages on push to main
 ```
 
