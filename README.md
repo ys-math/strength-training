@@ -22,23 +22,24 @@ Estimated 1RM uses the Epley formula: `weight × (1 + reps / 30)`.
 ## RM reference table
 
 Percentage of 1RM by rep count, derived from the same Epley formula the dashboard
-uses (`%1RM = 100 / (1 + reps / 30)`). Handy for picking a working weight once you
-know your estimated 1RM.
+uses (`%1RM = 100 / (1 + reps / 30)`). The kg columns are working weights for each
+lift, computed from the current estimated-1RM PRs in `strong_workouts.csv` (Bench
+73 kg · Squat 83 kg · Deadlift 99 kg · OHP 35 kg) — re-derive them as those PRs move.
 
-| Reps | % of 1RM |
-| ---: | -------: |
-|    1 |      97% |
-|    2 |      94% |
-|    3 |      91% |
-|    4 |      88% |
-|    5 |      86% |
-|    6 |      83% |
-|    7 |      81% |
-|    8 |      79% |
-|    9 |      77% |
-|   10 |      75% |
-|   11 |      73% |
-|   12 |      71% |
+| Reps | % of 1RM | Bench (kg) | Squat (kg) | Deadlift (kg) | OHP (kg) |
+| ---: | -------: | ---------: | ---------: | ------------: | -------: |
+|    1 |      97% |         71 |         81 |            96 |       34 |
+|    2 |      94% |         68 |         78 |            93 |       33 |
+|    3 |      91% |         66 |         76 |            90 |       32 |
+|    4 |      88% |         64 |         74 |            87 |       31 |
+|    5 |      86% |         62 |         71 |            85 |       30 |
+|    6 |      83% |         61 |         69 |            83 |       29 |
+|    7 |      81% |         59 |         68 |            80 |       28 |
+|    8 |      79% |         58 |         66 |            78 |       28 |
+|    9 |      77% |         56 |         64 |            76 |       27 |
+|   10 |      75% |         55 |         62 |            74 |       26 |
+|   11 |      73% |         53 |         61 |            72 |       26 |
+|   12 |      71% |         52 |         60 |            71 |       25 |
 
 ## Updating your data
 
