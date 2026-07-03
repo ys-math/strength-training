@@ -9,18 +9,12 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%8B%EF%B8%8F%3C/text%3E%3C/svg%3E"
     />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap"
-      rel="stylesheet"
-    />
     <script>
       // Sets data-theme before first paint so switching themes (or reloading
       // on a stored theme) never flashes the default theme first.
       // STORAGE_KEY here must match src/lib/theme.ts.
       ;(function () {
-        var THEME_IDS = ['modern-dark', 'modern-light', 'cozy', 'pixel']
+        var THEME_IDS = ['modern-dark', 'modern-light', 'cozy']
         try {
           var stored = localStorage.getItem('strength-training:theme')
           document.documentElement.setAttribute(

@@ -2,7 +2,7 @@
 // which sets data-theme before first paint to avoid a flash of the wrong theme.
 export const STORAGE_KEY = 'strength-training:theme'
 
-export type ThemeId = 'modern-dark' | 'modern-light' | 'cozy' | 'pixel'
+export type ThemeId = 'modern-dark' | 'modern-light' | 'cozy'
 
 export const DEFAULT_THEME: ThemeId = 'modern-dark'
 
@@ -10,7 +10,6 @@ export const THEMES: { id: ThemeId; label: string; emoji: string }[] = [
   { id: 'modern-dark', label: 'Modern Dark', emoji: '🌙' },
   { id: 'modern-light', label: 'Modern Light', emoji: '☀️' },
   { id: 'cozy', label: 'Cozy', emoji: '🧶' },
-  { id: 'pixel', label: 'Pixel RPG', emoji: '🎮' },
 ]
 
 export function isThemeId(value: string | null | undefined): value is ThemeId {
