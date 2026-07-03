@@ -97,11 +97,32 @@ npm run build    # production build into dist/
 npm run preview  # preview the production build
 ```
 
-## Enabling GitHub Pages (one-time)
+## Project structure
 
-In the repo: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-After the first push to `main`, the site publishes at
-<https://ys-math.github.io/strength-training/>.
+```
+strong_workouts.csv          Strong export — the single data source (imported via ?raw)
+src/
+  App.tsx                    imports the CSV, parses it once, renders <Dashboard>
+  lib/
+    types.ts                 the four LIFTS (BP/SQ/DL/OHP) + row/session types
+    parse.ts                 CSV → typed SetRow[] (Epley e1RM, warmup flag)
+    metrics.ts               e1RM series, PRs, Big-4 total, weekly volume, frequency
+    format.ts                date / kg / tonnage display helpers
+  components/
+    Dashboard.tsx            page layout, composes everything
+    StatCards.tsx            Big-4 total + per-lift PR cards
+    E1RMChart.tsx            headline multi-line est. 1RM chart
+    VolumeChart.tsx          weekly stacked tonnage bars
+    FrequencyHeatmap.tsx     calendar heatmap (plain divs, not Recharts)
+    LiftDetail.tsx           per-lift est. 1RM vs. heaviest set
+    ChartCard.tsx / Tooltip.tsx   shared chart chrome
+.github/workflows/deploy.yml  build + deploy to GitHub Pages on push to main
+```
+
+## GitHub Pages
+
+Pages is already enabled (**Settings → Pages → Source: GitHub Actions**); every push
+to `main` rebuilds and republishes automatically.
 
 > The Vite `base` in `vite.config.ts` is set to `/strength-training/` to match the
 > repo name. If you rename the repo, update it there too.
