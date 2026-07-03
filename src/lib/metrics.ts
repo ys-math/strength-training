@@ -208,3 +208,113 @@ export function overallStats(rows: SetRow[]): OverallStats {
     totalWorkingSets: rows.filter((r) => !r.isWarmup).length,
   }
 }
+
+// ---- Full session detail (all exercises, not just the big 4) ------------------
+
+export interface SetDetail {
+  setOrder: string
+  isWarmup: boolean
+  weight: number
+  reps: number
+}
+
+export interface ExerciseSessionDetail {
+  exercise: string
+  lift: LiftKey | null
+  sets: SetDetail[]
+  workingSets: number
+  volume: number // working tonnage (kg), warmups excluded
+}
+
+export interface SessionDetail {
+  dateKey: string
+  date: Date
+  workout: string
+  exercises: ExerciseSessionDetail[]
+  totalVolume: number
+  totalWorkingSets: number
+}
+
+// Every exercise performed in every session, in original workout order (Map
+// insertion order, since rows already arrive date-sorted from parse.ts). Sorted
+// most-recent-first, since a session log reads newest-first.
+export function sessionDetails(rows: SetRow[]): SessionDetail[] {
+  const byDate = new Map<string, SetRow[]>()
+  for (const r of rows) {
+    const list = byDate.get(r.dateKey)
+    if (list) list.push(r)
+    else byDate.set(r.dateKey, [r])
+  }
+
+  const sessions: SessionDetail[] = []
+  for (const [dateKey, dateRows] of byDate) {
+    const byExercise = new Map<string, SetRow[]>()
+    for (const r of dateRows) {
+      const list = byExercise.get(r.exercise)
+      if (list) list.push(r)
+      else byExercise.set(r.exercise, [r])
+    }
+
+    const exercises: ExerciseSessionDetail[] = []
+    for (const [exercise, exRows] of byExercise) {
+      let volume = 0
+      let workingSets = 0
+      const sets: SetDetail[] = exRows.map((r) => {
+        if (!r.isWarmup) {
+          volume += r.weight * r.reps
+          workingSets += 1
+        }
+        return { setOrder: r.setOrder, isWarmup: r.isWarmup, weight: r.weight, reps: r.reps }
+      })
+      exercises.push({ exercise, lift: exRows[0].lift, sets, workingSets, volume: round0(volume) })
+    }
+
+    sessions.push({
+      dateKey,
+      date: dateRows[0].date,
+      workout: dateRows[0].workout,
+      exercises,
+      totalVolume: exercises.reduce((sum, e) => sum + e.volume, 0),
+      totalWorkingSets: exercises.reduce((sum, e) => sum + e.workingSets, 0),
+    })
+  }
+
+  sessions.sort((a, b) => b.date.getTime() - a.date.getTime())
+  return sessions
+}
+
+// ---- Frequency stats (fills out the Training Frequency card) ------------------
+
+export interface FrequencyStats {
+  avgSessionsPerWeek: number
+  mostActiveWeekday: string
+  sessionsThisWeek: number
+}
+
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+export function frequencyStats(rows: SetRow[]): FrequencyStats {
+  if (rows.length === 0) return { avgSessionsPerWeek: 0, mostActiveWeekday: '—', sessionsThisWeek: 0 }
+
+  // One representative Date per session day, taken from the rows themselves
+  // (already correct local time) rather than re-parsing dateKey strings.
+  const byDay = new Map<string, Date>()
+  for (const r of rows) {
+    if (!byDay.has(r.dateKey)) byDay.set(r.dateKey, r.date)
+  }
+  const days = [...byDay.values()].sort((a, b) => a.getTime() - b.getTime())
+
+  const spanDays = Math.max(1, Math.round((days[days.length - 1].getTime() - days[0].getTime()) / 86400000) + 1)
+  const avgSessionsPerWeek = round1(days.length / (spanDays / 7))
+
+  const weekdayCounts = new Array(7).fill(0)
+  for (const d of days) weekdayCounts[d.getDay()]++
+  const mostActiveWeekday = WEEKDAY_LABELS[weekdayCounts.indexOf(Math.max(...weekdayCounts))]
+
+  const now = new Date()
+  const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7)) // Monday
+  const sessionsThisWeek = days.filter((d) => d >= weekStart).length
+
+  return { avgSessionsPerWeek, mostActiveWeekday, sessionsThisWeek }
+}

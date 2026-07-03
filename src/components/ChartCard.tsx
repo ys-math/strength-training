@@ -14,7 +14,7 @@ export default function ChartCard({
 }) {
   return (
     <section
-      className="rounded-2xl p-4 sm:p-5"
+      className="flex h-full flex-col rounded-2xl p-4 sm:p-5"
       style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
     >
       <div className="mb-3 flex items-start justify-between gap-3">
@@ -30,7 +30,7 @@ export default function ChartCard({
         </div>
         {right}
       </div>
-      {children}
+      <div className="flex-1">{children}</div>
     </section>
   )
 }

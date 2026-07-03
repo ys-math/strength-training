@@ -18,3 +18,10 @@ export function fmtTonnage(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)} t`
   return `${Math.round(n)} kg`
 }
+
+// Strips the equipment suffix for compact display, e.g. "Bench Press (Barbell)" ->
+// "Bench Press". Only for space-constrained UI (heatmap tooltip) — full names stay
+// elsewhere since they distinguish e.g. barbell vs. dumbbell variants.
+export function shortExerciseName(exercise: string): string {
+  return exercise.replace(/\s*\([^)]*\)\s*$/, '')
+}

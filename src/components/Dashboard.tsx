@@ -7,6 +7,7 @@ import E1RMChart from './E1RMChart'
 import VolumeChart from './VolumeChart'
 import FrequencyHeatmap from './FrequencyHeatmap'
 import LiftDetail from './LiftDetail'
+import SessionLog from './SessionLog'
 import ThemeSwitcher from './ThemeSwitcher'
 
 export default function Dashboard({ rows }: { rows: SetRow[] }) {
@@ -22,17 +23,14 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-      <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
-            Strength Training Progress
-          </h1>
-          <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
-            Bench · Squat · Deadlift · Overhead Press &nbsp;·&nbsp; {fmtLongDate(stats.firstDate)} –{' '}
-            {fmtLongDate(stats.lastDate)}
-          </p>
-        </div>
-        <ThemeSwitcher />
+      <header className="mb-6">
+        <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+          Strength Training Progress
+        </h1>
+        <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
+          Bench · Squat · Deadlift · Overhead Press &nbsp;·&nbsp; {fmtLongDate(stats.firstDate)} –{' '}
+          {fmtLongDate(stats.lastDate)}
+        </p>
       </header>
 
       <div className="space-y-4">
@@ -43,10 +41,16 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
           <FrequencyHeatmap rows={rows} />
         </div>
         <LiftDetail rows={rows} />
+        <SessionLog rows={rows} />
       </div>
 
       <footer className="mt-8 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
-        Estimated 1RM uses the Epley formula (weight × (1 + reps/30)). Data exported from the Strong app.
+        <div className="mb-3 flex justify-center">
+          <ThemeSwitcher />
+        </div>
+        <p style={{ color: 'var(--text-muted)' }}>
+          Estimated 1RM uses the Epley formula (weight × (1 + reps/30)). Data exported from the Strong app.
+        </p>
       </footer>
     </div>
   )
