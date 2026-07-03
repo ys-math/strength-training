@@ -4,6 +4,8 @@ A self-updating dashboard for tracking barbell strength progress — **Bench Pre
 Squat, Deadlift, Overhead Press** — built from a [Strong app](https://www.strong.app/)
 CSV export. Modern dark UI, deployed free on GitHub Pages.
 
+## 🔗 Live dashboard: **https://ys-math.github.io/strength-training/**
+
 ![Big 4](https://img.shields.io/badge/lifts-BP%20%C2%B7%20SQ%20%C2%B7%20DL%20%C2%B7%20OHP-3987e5)
 
 ## What it shows
@@ -41,7 +43,7 @@ npm run preview  # preview the production build
 
 In the repo: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 After the first push to `main`, the site publishes at
-`https://<user>.github.io/strength-training/`.
+<https://ys-math.github.io/strength-training/>.
 
 > The Vite `base` in `vite.config.ts` is set to `/strength-training/` to match the
 > repo name. If you rename the repo, update it there too.
