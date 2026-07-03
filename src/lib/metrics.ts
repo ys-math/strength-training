@@ -16,22 +16,25 @@ export function liftSessions(rows: SetRow[], lift: LiftKey): LiftSession[] {
   const sessions: LiftSession[] = []
   for (const [dateKey, sets] of byDate) {
     let bestE1rm = 0
-    let topWeight = 0
-    let topReps = 0
+    let maxWeight = 0
+    let maxWeightReps = 0
     let volume = 0
     let workingSets = 0
     for (const s of sets) {
-      if (s.e1rm > bestE1rm) {
-        bestE1rm = s.e1rm
-        topWeight = s.weight
-        topReps = s.reps
+      // Tracked independently of e1RM: a lighter, higher-rep set can score a
+      // better Epley estimate than the session's true heaviest single, so
+      // these must not share one comparison.
+      if (s.e1rm > bestE1rm) bestE1rm = s.e1rm
+      if (s.weight > maxWeight) {
+        maxWeight = s.weight
+        maxWeightReps = s.reps
       }
       if (!s.isWarmup) {
         volume += s.weight * s.reps
         workingSets += 1
       }
     }
-    sessions.push({ date: sets[0].date, dateKey, bestE1rm, topWeight, topReps, volume, workingSets })
+    sessions.push({ date: sets[0].date, dateKey, bestE1rm, maxWeight, maxWeightReps, volume, workingSets })
   }
 
   sessions.sort((a, b) => a.date.getTime() - b.date.getTime())
@@ -44,14 +47,20 @@ export function liftPR(sessions: LiftSession[]): LiftPR | null {
   let heaviest = sessions[0]
   for (const s of sessions) {
     if (s.bestE1rm > best.bestE1rm) best = s
-    if (s.topWeight > heaviest.topWeight) heaviest = s
+    if (s.maxWeight > heaviest.maxWeight) heaviest = s
+  }
+  // What the record was immediately before it was broken, for a progress delta.
+  let prevMaxWeight = 0
+  for (const s of sessions) {
+    if (s.date.getTime() < heaviest.date.getTime() && s.maxWeight > prevMaxWeight) prevMaxWeight = s.maxWeight
   }
   return {
     maxE1rm: best.bestE1rm,
     maxE1rmDate: best.dateKey,
-    maxWeight: heaviest.topWeight,
-    maxWeightReps: heaviest.topReps,
+    maxWeight: heaviest.maxWeight,
+    maxWeightReps: heaviest.maxWeightReps,
     maxWeightDate: heaviest.dateKey,
+    prevMaxWeight,
   }
 }
 
@@ -122,6 +131,35 @@ export function big4Series(rows: SetRow[]): { series: Big4Point[]; current: numb
     prev = series[i].total
   }
   return { series, current, prev }
+}
+
+// Each lift's *best-to-date* actual max weight, tracked over time so it only
+// climbs — the true-weight counterpart to e1rmSeries's estimated figures.
+// Mirrors big4Series's bestToDate scan, but per-lift rather than summed.
+export function maxWeightSeries(rows: SetRow[]): E1rmPoint[] {
+  const dates = [...new Set(rows.filter((r) => r.lift).map((r) => r.dateKey))].sort()
+  const bestToDate: Record<LiftKey, number> = { BP: 0, SQ: 0, DL: 0, OHP: 0 }
+
+  const byLiftDate = new Map<string, number>()
+  for (const lift of LIFTS) {
+    for (const s of liftSessions(rows, lift.key)) {
+      byLiftDate.set(`${lift.key}|${s.dateKey}`, s.maxWeight)
+    }
+  }
+
+  const series: E1rmPoint[] = []
+  for (const dateKey of dates) {
+    for (const lift of LIFTS) {
+      const v = byLiftDate.get(`${lift.key}|${dateKey}`)
+      if (v && v > bestToDate[lift.key]) bestToDate[lift.key] = v
+    }
+    const point: E1rmPoint = { dateKey, ts: new Date(dateKey).getTime() }
+    for (const lift of LIFTS) {
+      if (bestToDate[lift.key] > 0) point[lift.key] = bestToDate[lift.key]
+    }
+    series.push(point)
+  }
+  return series
 }
 
 // ---- Weekly volume (ISO week) -------------------------------------------------

@@ -25,7 +25,7 @@ export default function LiftDetail({ rows }: { rows: SetRow[] }) {
       liftSessions(rows, selected).map((s) => ({
         dateKey: s.dateKey,
         e1rm: round1(s.bestE1rm),
-        weight: s.topWeight,
+        weight: s.maxWeight,
       })),
     [rows, selected],
   )

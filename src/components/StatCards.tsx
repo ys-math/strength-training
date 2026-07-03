@@ -68,6 +68,11 @@ export default function StatCards({ rows }: { rows: SetRow[] }) {
               <div>
                 Heaviest: <span style={{ color: 'var(--text-secondary)' }}>{fmtKg(pr.maxWeight)} × {pr.maxWeightReps}</span>
               </div>
+              {pr.prevMaxWeight > 0 && pr.maxWeight > pr.prevMaxWeight && (
+                <div className="mt-0.5 font-medium" style={{ color: 'var(--delta-good)' }}>
+                  ▲ {round1(pr.maxWeight - pr.prevMaxWeight)} kg from previous PR
+                </div>
+              )}
               {latest && (
                 <div className="mt-0.5">Last: {fmtLongDate(latest.dateKey)}</div>
               )}

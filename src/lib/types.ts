@@ -38,8 +38,8 @@ export interface LiftSession {
   date: Date
   dateKey: string
   bestE1rm: number
-  topWeight: number
-  topReps: number // reps of the best-e1rm set
+  maxWeight: number // heaviest weight actually lifted this session (independent of e1RM)
+  maxWeightReps: number // reps of that set
   volume: number // working tonnage (kg), warmups excluded
   workingSets: number
 }
@@ -50,4 +50,5 @@ export interface LiftPR {
   maxWeight: number
   maxWeightReps: number
   maxWeightDate: string
+  prevMaxWeight: number // the record immediately before maxWeight was set (0 if none)
 }

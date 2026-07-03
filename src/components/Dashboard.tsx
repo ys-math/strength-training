@@ -4,6 +4,7 @@ import { overallStats } from '../lib/metrics'
 import { fmtLongDate } from '../lib/format'
 import StatCards from './StatCards'
 import E1RMChart from './E1RMChart'
+import MaxWeightChart from './MaxWeightChart'
 import VolumeChart from './VolumeChart'
 import FrequencyHeatmap from './FrequencyHeatmap'
 import LiftDetail from './LiftDetail'
@@ -36,6 +37,7 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
       <div className="space-y-4">
         <StatCards rows={rows} />
         <E1RMChart rows={rows} />
+        <MaxWeightChart rows={rows} />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <VolumeChart rows={rows} />
           <FrequencyHeatmap rows={rows} />
