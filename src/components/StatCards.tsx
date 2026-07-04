@@ -3,7 +3,6 @@ import { LIFTS, type SetRow } from '../lib/types'
 import { big4Series, cumulativeSeries, currentPrev, liftPR, liftSessions, round1 } from '../lib/metrics'
 import { fmtKg, fmtLongDate } from '../lib/format'
 import type { MetricMode } from '../lib/mode'
-import Sparkline from './Sparkline'
 
 export default function StatCards({ rows, mode }: { rows: SetRow[]; mode: MetricMode }) {
   const big4 = useMemo(() => big4Series(rows, mode), [rows, mode])
@@ -17,13 +16,12 @@ export default function StatCards({ rows, mode }: { rows: SetRow[]; mode: Metric
           .map((p) => p[lift.key])
           .filter((v): v is number => v != null)
         const { current, prev } = currentPrev(values)
-        return { lift, pr: liftPR(sessions), latest: sessions[sessions.length - 1], values, current, prev }
+        return { lift, pr: liftPR(sessions), latest: sessions[sessions.length - 1], current, prev }
       }),
     [rows, cumulative],
   )
 
   const big4Delta = round1(big4.current - big4.prev)
-  const big4Values = big4.series.map((p) => p.total)
   const heroTitle = mode === 'e1rm' ? 'Big 4 total (est. 1RM)' : 'Big 4 total (max weight)'
   const cardLabel = mode === 'e1rm' ? 'est. 1RM PR' : 'max weight PR'
 
@@ -51,12 +49,9 @@ export default function StatCards({ rows, mode }: { rows: SetRow[]; mode: Metric
             ▲ {big4Delta} kg from previous best
           </div>
         )}
-        <div className="mt-auto pt-3">
-          <Sparkline values={big4Values} color="var(--lift-bp)" />
-        </div>
       </div>
 
-      {cards.map(({ lift, pr, latest, values, current, prev }) => {
+      {cards.map(({ lift, pr, latest, current, prev }) => {
         const delta = round1(current - prev)
         return (
           <div
@@ -101,9 +96,6 @@ export default function StatCards({ rows, mode }: { rows: SetRow[]; mode: Metric
                 {latest && <div className="mt-0.5">Last: {fmtLongDate(latest.dateKey)}</div>}
               </div>
             )}
-            <div className="mt-auto pt-2">
-              <Sparkline values={values} color={lift.color} />
-            </div>
           </div>
         )
       })}

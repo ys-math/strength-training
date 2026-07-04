@@ -140,7 +140,7 @@ export function big4Series(rows: SetRow[], mode: MetricMode): { series: Big4Poin
 }
 
 // Each lift's *best-to-date* value in the chosen metric, per workout date, so
-// each line only climbs. Used for the max-weight main chart and every sparkline.
+// each series only climbs. Backs the per-lift "current PR" figure in StatCards.
 export function cumulativeSeries(rows: SetRow[], mode: MetricMode): E1rmPoint[] {
   const dates = [...new Set(rows.filter((r) => r.lift).map((r) => r.dateKey))].sort()
   const bestToDate: Record<LiftKey, number> = { BP: 0, SQ: 0, DL: 0, OHP: 0 }
@@ -165,6 +165,35 @@ export function cumulativeSeries(rows: SetRow[], mode: MetricMode): E1rmPoint[] 
     series.push(point)
   }
   return series
+}
+
+// Per-session heaviest set for each lift (raw kg, not cumulative — it can rise or
+// fall session to session). Carries the reps of that heaviest set and the lift's
+// working-set count that day so the chart tooltip can show both.
+export interface MaxWeightPoint {
+  dateKey: string
+  ts: number
+  BP?: number
+  SQ?: number
+  DL?: number
+  OHP?: number
+  detail: Partial<Record<LiftKey, { reps: number; sets: number }>>
+}
+
+export function maxWeightSeries(rows: SetRow[]): MaxWeightPoint[] {
+  const byDate = new Map<string, MaxWeightPoint>()
+  for (const lift of LIFTS) {
+    for (const s of liftSessions(rows, lift.key)) {
+      let point = byDate.get(s.dateKey)
+      if (!point) {
+        point = { dateKey: s.dateKey, ts: s.date.getTime(), detail: {} }
+        byDate.set(s.dateKey, point)
+      }
+      point[lift.key] = round1(s.maxWeight)
+      point.detail[lift.key] = { reps: s.maxWeightReps, sets: s.workingSets }
+    }
+  }
+  return [...byDate.values()].sort((a, b) => a.ts - b.ts)
 }
 
 // ---- Weekly volume (ISO week) -------------------------------------------------

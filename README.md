@@ -13,8 +13,10 @@ CSV export. Modern dark UI, deployed free on GitHub Pages.
 - **Metric toggle** — flip the headline number, the PR cards, and the main chart between
   **estimated 1RM** and **actual max weight lifted**; your choice is remembered.
 - **Big 4 total** — combined est. 1RM (or max weight) across the four lifts, one climbing number.
-- **Progress over time** — per-lift headline chart (Epley e1RM per session, or max-weight PRs).
-- **PR cards** — the PR in the active metric, a from-previous-PR delta, and an inline sparkline.
+- **Progress over time** — per-lift headline chart of the best set each session (Epley e1RM,
+  or actual heaviest weight — hover a point for its reps and set count).
+- **PR cards** — the PR in the active metric and a from-previous-PR delta.
+- **Latest workout** — the most recent session in full: every exercise, set, and volume.
 - **Weekly volume** — working tonnage (weight × reps), warmup sets excluded.
 - **Training frequency** — GitHub-style calendar heatmap of working sets per day.
 - **Per-lift detail** — est. 1RM vs. heaviest set for any single lift.
@@ -54,31 +56,57 @@ to the nearest kg.
 | Weight (kg) |   1 |   2 |   3 |   4 |   5 |   6 |   7 |   8 |   9 |  10 |
 | ----------: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |
 |          20 |  21 |  21 |  22 |  23 |  23 |  24 |  25 |  25 |  26 |  27 |
-|          25 |  26 |  27 |  28 |  28 |  29 |  30 |  31 |  32 |  32 |  33 |
+|        22.5 |  23 |  24 |  25 |  26 |  26 |  27 |  28 |  29 |  29 |  30 |
+|          25 |  26 |  27 |  28 |  28 |  29 |  30 |  31 |  32 |  33 |  33 |
+|        27.5 |  28 |  29 |  30 |  31 |  32 |  33 |  34 |  35 |  36 |  37 |
 |          30 |  31 |  32 |  33 |  34 |  35 |  36 |  37 |  38 |  39 |  40 |
-|          35 |  36 |  37 |  38 |  40 |  41 |  42 |  43 |  44 |  46 |  47 |
+|        32.5 |  34 |  35 |  36 |  37 |  38 |  39 |  40 |  41 |  42 |  43 |
+|          35 |  36 |  37 |  39 |  40 |  41 |  42 |  43 |  44 |  46 |  47 |
+|        37.5 |  39 |  40 |  41 |  43 |  44 |  45 |  46 |  48 |  49 |  50 |
 |          40 |  41 |  43 |  44 |  45 |  47 |  48 |  49 |  51 |  52 |  53 |
-|          45 |  47 |  48 |  50 |  51 |  52 |  54 |  56 |  57 |  58 |  60 |
+|        42.5 |  44 |  45 |  47 |  48 |  50 |  51 |  52 |  54 |  55 |  57 |
+|          45 |  47 |  48 |  50 |  51 |  53 |  54 |  56 |  57 |  59 |  60 |
+|        47.5 |  49 |  51 |  52 |  54 |  55 |  57 |  59 |  60 |  62 |  63 |
 |          50 |  52 |  53 |  55 |  57 |  58 |  60 |  62 |  63 |  65 |  67 |
+|        52.5 |  54 |  56 |  58 |  60 |  61 |  63 |  65 |  67 |  68 |  70 |
 |          55 |  57 |  59 |  61 |  62 |  64 |  66 |  68 |  70 |  72 |  73 |
+|        57.5 |  59 |  61 |  63 |  65 |  67 |  69 |  71 |  73 |  75 |  77 |
 |          60 |  62 |  64 |  66 |  68 |  70 |  72 |  74 |  76 |  78 |  80 |
-|          65 |  67 |  69 |  72 |  74 |  76 |  78 |  80 |  82 |  84 |  87 |
+|        62.5 |  65 |  67 |  69 |  71 |  73 |  75 |  77 |  79 |  81 |  83 |
+|          65 |  67 |  69 |  72 |  74 |  76 |  78 |  80 |  82 |  85 |  87 |
+|        67.5 |  70 |  72 |  74 |  77 |  79 |  81 |  83 |  86 |  88 |  90 |
 |          70 |  72 |  75 |  77 |  79 |  82 |  84 |  86 |  89 |  91 |  93 |
-|          75 |  78 |  80 |  82 |  85 |  88 |  90 |  92 |  95 |  98 | 100 |
+|        72.5 |  75 |  77 |  80 |  82 |  85 |  87 |  89 |  92 |  94 |  97 |
+|          75 |  78 |  80 |  83 |  85 |  88 |  90 |  93 |  95 |  98 | 100 |
+|        77.5 |  80 |  83 |  85 |  88 |  90 |  93 |  96 |  98 | 101 | 103 |
 |          80 |  83 |  85 |  88 |  91 |  93 |  96 |  99 | 101 | 104 | 107 |
-|          85 |  88 |  91 |  94 |  96 |  99 | 102 | 105 | 108 | 110 | 113 |
+|        82.5 |  85 |  88 |  91 |  94 |  96 |  99 | 102 | 105 | 107 | 110 |
+|          85 |  88 |  91 |  94 |  96 |  99 | 102 | 105 | 108 | 111 | 113 |
+|        87.5 |  90 |  93 |  96 |  99 | 102 | 105 | 108 | 111 | 114 | 117 |
 |          90 |  93 |  96 |  99 | 102 | 105 | 108 | 111 | 114 | 117 | 120 |
+|        92.5 |  96 |  99 | 102 | 105 | 108 | 111 | 114 | 117 | 120 | 123 |
 |          95 |  98 | 101 | 105 | 108 | 111 | 114 | 117 | 120 | 124 | 127 |
+|        97.5 | 101 | 104 | 107 | 111 | 114 | 117 | 120 | 124 | 127 | 130 |
 |         100 | 103 | 107 | 110 | 113 | 117 | 120 | 123 | 127 | 130 | 133 |
-|         105 | 109 | 112 | 116 | 119 | 123 | 126 | 130 | 133 | 136 | 140 |
+|       102.5 | 106 | 109 | 113 | 116 | 120 | 123 | 126 | 130 | 133 | 137 |
+|         105 | 109 | 112 | 116 | 119 | 123 | 126 | 130 | 133 | 137 | 140 |
+|       107.5 | 111 | 115 | 118 | 122 | 125 | 129 | 133 | 136 | 140 | 143 |
 |         110 | 114 | 117 | 121 | 125 | 128 | 132 | 136 | 139 | 143 | 147 |
+|       112.5 | 116 | 120 | 124 | 128 | 131 | 135 | 139 | 143 | 146 | 150 |
 |         115 | 119 | 123 | 127 | 130 | 134 | 138 | 142 | 146 | 150 | 153 |
+|       117.5 | 121 | 125 | 129 | 133 | 137 | 141 | 145 | 149 | 153 | 157 |
 |         120 | 124 | 128 | 132 | 136 | 140 | 144 | 148 | 152 | 156 | 160 |
-|         125 | 129 | 133 | 138 | 142 | 146 | 150 | 154 | 158 | 162 | 167 |
+|       122.5 | 127 | 131 | 135 | 139 | 143 | 147 | 151 | 155 | 159 | 163 |
+|         125 | 129 | 133 | 138 | 142 | 146 | 150 | 154 | 158 | 163 | 167 |
+|       127.5 | 132 | 136 | 140 | 145 | 149 | 153 | 157 | 162 | 166 | 170 |
 |         130 | 134 | 139 | 143 | 147 | 152 | 156 | 160 | 165 | 169 | 173 |
-|         135 | 140 | 144 | 148 | 153 | 158 | 162 | 166 | 171 | 176 | 180 |
+|       132.5 | 137 | 141 | 146 | 150 | 155 | 159 | 163 | 168 | 172 | 177 |
+|         135 | 140 | 144 | 149 | 153 | 158 | 162 | 167 | 171 | 176 | 180 |
+|       137.5 | 142 | 147 | 151 | 156 | 160 | 165 | 170 | 174 | 179 | 183 |
 |         140 | 145 | 149 | 154 | 159 | 163 | 168 | 173 | 177 | 182 | 187 |
-|         145 | 150 | 155 | 160 | 164 | 169 | 174 | 179 | 184 | 188 | 193 |
+|       142.5 | 147 | 152 | 157 | 162 | 166 | 171 | 176 | 181 | 185 | 190 |
+|         145 | 150 | 155 | 160 | 164 | 169 | 174 | 179 | 184 | 189 | 193 |
+|       147.5 | 152 | 157 | 162 | 167 | 172 | 177 | 182 | 187 | 192 | 197 |
 |         150 | 155 | 160 | 165 | 170 | 175 | 180 | 185 | 190 | 195 | 200 |
 
 ## Updating your data
@@ -150,14 +178,15 @@ src/
     useMetricMode.ts         reads/writes the active metric mode (localStorage)
   components/
     Dashboard.tsx            page layout, composes everything
-    StatCards.tsx            Big-4 total + per-lift PR cards, each with a sparkline
+    StatCards.tsx            Big-4 total + per-lift PR cards
+    LatestWorkout.tsx        most recent session in full (always expanded)
     ProgressChart.tsx        headline chart; toggles est. 1RM ⇄ max weight
     VolumeChart.tsx          weekly stacked tonnage bars
     FrequencyHeatmap.tsx     calendar heatmap (plain divs, not Recharts)
     LiftDetail.tsx           per-lift est. 1RM vs. heaviest set
+    SessionLog.tsx           collapsible full history of every session
     ModeToggle.tsx           est. 1RM / max weight switch in the header
     ThemeSwitcher.tsx        theme picker in the footer
-    Sparkline.tsx            tiny inline SVG trend line for stat cards
     ChartCard.tsx / Tooltip.tsx   shared chart chrome
 index.html                   inline pre-paint script sets the saved theme (no flash)
 .github/workflows/deploy.yml  build + deploy to GitHub Pages on push to main

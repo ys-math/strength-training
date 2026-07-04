@@ -4,6 +4,7 @@ import { overallStats } from '../lib/metrics'
 import { fmtLongDate } from '../lib/format'
 import { useMetricMode } from '../hooks/useMetricMode'
 import StatCards from './StatCards'
+import LatestWorkout from './LatestWorkout'
 import ProgressChart from './ProgressChart'
 import VolumeChart from './VolumeChart'
 import FrequencyHeatmap from './FrequencyHeatmap'
@@ -41,6 +42,7 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
 
       <div className="space-y-4">
         <StatCards rows={rows} mode={mode} />
+        <LatestWorkout rows={rows} />
         <ProgressChart rows={rows} mode={mode} />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <VolumeChart rows={rows} />

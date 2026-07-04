@@ -40,7 +40,8 @@ strong_workouts.csv ?raw
   `parseWorkouts`. Dates arrive as `"YYYY-MM-DD HH:MM:SS"` (local). Sets are keyed by
   `dateKey` (YYYY-MM-DD).
 - **`src/lib/metrics.ts`** — all aggregation, pure and unit-testable: `liftSessions`,
-  `liftPR`, `e1rmSeries` (per-session best e1RM), `cumulativeSeries(rows, mode)` and
+  `liftPR`, `e1rmSeries` (per-session best e1RM), `maxWeightSeries` (per-session heaviest
+  set + its reps/set-count, for the max-weight chart), `cumulativeSeries(rows, mode)` and
   `big4Series(rows, mode)` (each lift's / the summed best-to-date value, only climbs),
   `currentPrev`, `weeklyVolume` (ISO week), `dailyActivity`, `sessionDetails`, `overallStats`.
 - **`src/components/`** — presentational; each takes `rows: SetRow[]` and derives via
@@ -48,13 +49,15 @@ strong_workouts.csv ?raw
 
 ### Metric mode (est. 1RM vs. actual max weight)
 
-A global toggle switches the primary metric shown by `StatCards` (hero + per-lift cards,
-each with a `Sparkline`) and the main `ProgressChart`. Defined in `src/lib/mode.ts`
+A global toggle switches the primary metric shown by `StatCards` (hero + per-lift cards)
+and the main `ProgressChart`. Defined in `src/lib/mode.ts`
 (`MetricMode = 'e1rm' | 'maxWeight'`, `MODES`, `DEFAULT_MODE`, `MODE_STORAGE_KEY`);
 `src/hooks/useMetricMode.ts` reads/writes `localStorage`; `ModeToggle.tsx` is the header
 control. Mode-aware metrics take `mode` and read the right per-session value via an internal
-`sessionMetric` (`bestE1rm` or `maxWeight`). In `e1rm` mode `ProgressChart` shows per-session
-best e1RM (monotone lines); in `maxWeight` mode it shows best-to-date PRs (`stepAfter` lines).
+`sessionMetric` (`bestE1rm` or `maxWeight`). Both modes of `ProgressChart` plot the best set
+*per session* (monotone lines): `e1rm` via `e1rmSeries`, `maxWeight` via `maxWeightSeries`
+(whose points also carry each set's reps and working-set count, shown in a custom tooltip).
+The `StatCards` per-lift "current PR" figure still comes from `cumulativeSeries` (best-to-date).
 
 ### Theming
 
