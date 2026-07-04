@@ -82,7 +82,7 @@ describe('nextSessionSuggestion — plateau / deload', () => {
     expect(s.action).toBe('deload')
     expect(s.sets).toBe(2) // ~half of 3, rounded
     expect(s.setsDelta).toBeLessThan(0)
-    expect(s.projectedWeight).toBeNull() // a deload isn't a trend-advancing goal
+    expect(s.projectedWeight).toBe(60) // a deload holds the load — flat projection
     expect(s.rationale).toMatch(/heuristic/i)
   })
 
@@ -94,7 +94,7 @@ describe('nextSessionSuggestion — plateau / deload', () => {
     ]
     const s = nextSessionSuggestion(rows).BP
     expect(s.action).toBe('deload')
-    expect(s.projectedWeight).toBeNull()
+    expect(s.projectedWeight).toBe(60)
     expect(s.rationale).toMatch(/flat/i)
   })
 })
@@ -115,8 +115,8 @@ describe('nextSessionSuggestion — RPE autoregulation', () => {
     expect(hasRpeData(rows)).toBe(true)
     const s = nextSessionSuggestion(rows).BP
     expect(s.action).toBe('add-rep')
-    expect(s.repsDelta).toBe(0)
-    expect(s.projectedWeight).toBeNull()
+    expect(s.repsDelta).toBe(0) // a hold: no rep gain
+    expect(s.projectedWeight).toBe(60) // flat projection at the held load
   })
 })
 

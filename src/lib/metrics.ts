@@ -436,8 +436,8 @@ export interface Suggestion {
   loadDelta: number // target − prev, kg (0 when prev is null)
   repsDelta: number // target − prev reps
   setsDelta: number // target − prev sets
-  projectedWeight: number | null // target.load if the goal advances the trend, else null
-  projectedE1rm: number | null // epley(target.load, target.reps) if it advances, else null
+  projectedWeight: number | null // where the trend lands next session if the target is met (null only w/o history)
+  projectedE1rm: number | null // epley(target.load, target.reps) (flat for a hold/deload)
   rationale: string // one-line explanation
 }
 
@@ -525,15 +525,15 @@ function rpeRisingAtConstant(tops: TopSet[]): boolean {
 
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s)
 
-// Assemble a Suggestion from a target prescription: fills deltas vs. `prev` and,
-// when the goal advances the trend, the projected next-session weight & e1RM.
+// Assemble a Suggestion from a target prescription: fills deltas vs. `prev` and the
+// projected next-session weight & e1RM (where the trend lands if the target is met —
+// flat for a hold/deload, up for a progression).
 function buildSuggestion(
   lift: LiftKey,
   action: SuggestionAction,
   target: TopSetSummary,
   prev: TopSetSummary | null,
   rationale: string,
-  advances: boolean,
 ): Suggestion {
   return {
     lift,
@@ -545,8 +545,8 @@ function buildSuggestion(
     loadDelta: prev ? round1(target.load - prev.load) : 0,
     repsDelta: prev ? target.reps - prev.reps : 0,
     setsDelta: prev ? target.sets - prev.sets : 0,
-    projectedWeight: advances ? target.load : null,
-    projectedE1rm: advances ? round1(epley(target.load, target.reps)) : null,
+    projectedWeight: target.load,
+    projectedE1rm: round1(epley(target.load, target.reps)),
     rationale,
   }
 }
@@ -560,7 +560,6 @@ function deloadSuggestion(lift: LiftKey, last: TopSet, config: SuggestionConfig,
     { load: last.load, reps: last.reps, sets },
     prev,
     `${cap(why)}; ease off for a session or two. Heuristic (e1RM trend), not a fatigue model.`,
-    false,
   )
 }
 
@@ -606,7 +605,6 @@ function suggestForLift(
         { load: last.load, reps: last.reps, sets },
         prev,
         `Hit the top of the ${lo}–${hi} range, but RPE is rising at the same load — hold before adding weight.`,
-        false,
       )
     }
     return buildSuggestion(
@@ -615,7 +613,6 @@ function suggestForLift(
       { load: last.load + inc, reps: lo, sets },
       prev,
       `Hit ${sets}×${last.reps} @ ${last.load}kg last session (top of ${lo}–${hi} range).`,
-      true,
     )
   }
 
@@ -630,7 +627,6 @@ function suggestForLift(
       { load: last.load, reps: last.reps + 1, sets },
       prev,
       `Reps within the ${lo}–${hi} range but not at the top yet.`,
-      true,
     )
   }
 
@@ -648,7 +644,6 @@ function suggestForLift(
     { load: last.load, reps: last.reps + 1, sets },
     prev,
     `Below the ${lo}–${hi} range — rebuild reps at this load before adding weight.`,
-    true,
   )
 }
 

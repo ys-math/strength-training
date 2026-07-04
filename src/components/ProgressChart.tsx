@@ -10,40 +10,81 @@ import {
   YAxis,
 } from 'recharts'
 import { LIFT_BY_KEY, LIFTS, type LiftKey } from '../lib/types'
-import { e1rmSeries, maxWeightSeries, nextSessionSuggestion, type MaxWeightPoint } from '../lib/metrics'
+import { e1rmSeries, maxWeightSeries, nextSessionSuggestion, type MaxWeightPoint, type Suggestion } from '../lib/metrics'
 import { fmtDate, fmtLongDate } from '../lib/format'
 import type { SetRow } from '../lib/types'
 import type { MetricMode } from '../lib/mode'
 import ChartCard from './ChartCard'
-import ChartTooltip from './Tooltip'
 
-// Max-weight mode tooltip: each lift's heaviest set that session as weight × reps,
-// plus its working-set count — the number the generic value tooltip can't carry.
-// Projection series (dataKey ending "__p") are skipped so the dashed continuation
-// doesn't show as a real row.
-function MaxWeightTooltip({ active, payload, label }: TooltipProps<number, string>) {
+const tipClass = 'rounded-lg px-3 py-2 text-xs shadow-lg'
+const tipStyle = { background: 'var(--page)', border: '1px solid var(--border)', color: 'var(--text-primary)' }
+
+// One tooltip for the whole chart. On the synthetic projected column it lists each
+// lift's suggested next-session target; on a real session it shows that session's
+// per-lift value (with reps · sets in max-weight mode). Projection series (dataKeys
+// ending "__p") never surface as their own rows.
+function ProgressTooltip({
+  active,
+  payload,
+  label,
+  mode,
+  suggestions,
+}: TooltipProps<number, string> & { mode: MetricMode; suggestions: Record<LiftKey, Suggestion> }) {
   if (!active || !payload || payload.length === 0) return null
+  const row = payload[0].payload as Record<string, unknown>
+
+  if (row.__projection === true) {
+    const items = LIFTS.filter((l) => row[`${l.key}__p`] != null && suggestions[l.key].prev != null)
+    if (items.length === 0) return null
+    return (
+      <div className={tipClass} style={tipStyle}>
+        <div className="mb-1 font-medium" style={{ color: 'var(--text-secondary)' }}>
+          Next session · projected
+        </div>
+        {items.map((l) => {
+          const s = suggestions[l.key]
+          return (
+            <div key={l.key} className="flex items-center gap-2 py-0.5">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: l.color }} />
+              <span style={{ color: 'var(--text-muted)' }}>{l.label}</span>
+              <span className="ml-auto tabular-nums font-medium">
+                {s.load} kg × {s.reps}
+                <span style={{ color: 'var(--text-muted)' }}> · {s.sets} {s.sets === 1 ? 'set' : 'sets'}</span>
+              </span>
+            </div>
+          )
+        })}
+        <div className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+          If you hit the suggested goal.
+        </div>
+      </div>
+    )
+  }
+
   const items = payload.filter((p) => p.value != null && !String(p.dataKey).endsWith('__p'))
   if (items.length === 0) return null
   return (
-    <div
-      className="rounded-lg px-3 py-2 text-xs shadow-lg"
-      style={{ background: 'var(--page)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
-    >
+    <div className={tipClass} style={tipStyle}>
       <div className="mb-1 font-medium" style={{ color: 'var(--text-secondary)' }}>
         {fmtLongDate(String(label))}
       </div>
       {items.map((p) => {
         const key = p.dataKey as LiftKey
-        const d = (p.payload as MaxWeightPoint).detail?.[key]
+        const d = mode === 'maxWeight' ? (p.payload as MaxWeightPoint).detail?.[key] : undefined
         return (
           <div key={key} className="flex items-center gap-2 py-0.5">
             <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: p.color }} />
             <span style={{ color: 'var(--text-muted)' }}>{LIFT_BY_KEY.get(key)?.label ?? p.name}</span>
             <span className="ml-auto tabular-nums font-medium">
-              {p.value} kg{d ? ` × ${d.reps}` : ''}
-              {d && d.sets > 0 && (
-                <span style={{ color: 'var(--text-muted)' }}> · {d.sets} {d.sets === 1 ? 'set' : 'sets'}</span>
+              {mode === 'maxWeight' ? (
+                <>
+                  {p.value} kg{d ? ` × ${d.reps}` : ''}
+                  {d && d.sets > 0 && (
+                    <span style={{ color: 'var(--text-muted)' }}> · {d.sets} {d.sets === 1 ? 'set' : 'sets'}</span>
+                  )}
+                </>
+              ) : (
+                `${Math.round(Number(p.value) * 10) / 10} kg`
               )}
             </span>
           </div>
@@ -242,15 +283,7 @@ export default function ProgressChart({ rows, mode }: { rows: SetRow[]; mode: Me
               stroke="var(--baseline)"
               tickFormatter={(v: number) => `${v}`}
             />
-            <Tooltip
-              content={
-                mode === 'e1rm' ? (
-                  <ChartTooltip labelFormatter={fmtLongDate} valueFormatter={(v) => `${Math.round(v * 10) / 10} kg`} />
-                ) : (
-                  <MaxWeightTooltip />
-                )
-              }
-            />
+            <Tooltip content={<ProgressTooltip mode={mode} suggestions={suggestions} />} />
             {LIFTS.map((lift) =>
               hidden.has(lift.key) ? null : (
                 <Line
