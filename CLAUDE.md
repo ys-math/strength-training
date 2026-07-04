@@ -74,16 +74,21 @@ and `LatestWorkout` share the `SetChip` / `groupSets` pill from `components/SetC
 
 ### Goals & roadmap
 
-Per-lift **max-weight** targets at 3/6/12-month horizons, persisted in `localStorage` via
-`useGoals` (`GoalMap` + helpers in `src/lib/goals.ts`; empty entry ⇒ use the recommendation, so
-only overrides are stored). `metrics.ts` adds `recommendedGoals` (decelerating %-gain, snapped to
-2.5 kg — `DEFAULT_GOAL_CONFIG`), `recentRatePerWeek`, and `goalPace`. `nextSessionSuggestion(rows,
-goalCtx?, config?)` is now **goal-aware**: with a short-term `GoalContext` it fills
-`Suggestion.goalPace`/`requiredPerWeek` and, when *behind* pace and only mildly stalled, pushes a
-rep instead of a soft deload (hard deloads/load-jumps unchanged). `Dashboard` computes the
-goal-aware `suggestions` **once** and passes them as a prop to both `NextSession` and
-`ProgressChart` (so the card and the chart projection agree). `Roadmap.tsx` renders the editable
-timeline. Reasoning/evidence live in README's "How goals work".
+Per-lift **max-weight** targets at 3/6/12-month horizons, **recommendation-only** (no editing, no
+persistence). The roadmap is anchored to **fixed calendar quarters**: `quarterCheckpoints` in
+`src/lib/goals.ts` returns the four upcoming quarters (for the timeline strip) and the short/mid/long
+due-dates (1st/2nd/4th quarter-ends); `goals.ts` also holds `HORIZONS` and `weeksUntil`. `metrics.ts`
+provides `recommendedGoals` — **history-driven, bounded by diminishing returns**: it projects
+`recentRatePerWeek` forward a quarter at a time with per-period **decay** (mid ×0.7, long ×0.5), then
+**clamps** the cumulative gain between a %-of-current floor and a decelerating %-of-current cap
+(8/15/25 %, so a hot streak can't project to absurd numbers), snapped to 2.5 kg and forced strictly
+increasing (`DEFAULT_GOAL_CONFIG`) — plus `recentRatePerWeek` and `goalPace`. `nextSessionSuggestion(rows, goalCtx?, config?)` is **goal-aware**: with a short-term
+`GoalContext` (built from the recommended short target) it fills `Suggestion.goalPace`/`requiredPerWeek`
+and, when *behind* pace and only mildly stalled, pushes a rep instead of a soft deload (hard
+deloads/load-jumps unchanged). `Dashboard` computes the goal-aware `suggestions` **once** and passes
+them as a prop to both `NextSession` and `ProgressChart` (so the card and the chart projection agree).
+`Roadmap.tsx` (`{ rows }` only) renders the quarter timeline + per-lift current-vs-target bars with
+pace chips. Reasoning/evidence live in README's "How goals work".
 
 ### Theming
 

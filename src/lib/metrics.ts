@@ -725,15 +725,25 @@ export function nextSessionSuggestion(
 // ---- Goals: recommended targets, progress pace -------------------------------
 
 export interface GoalConfig {
-  gainPct: Record<GoalHorizon, number> // cumulative %-of-current gain per horizon
+  quarterWeeks: number // weeks of runway credited per calendar quarter
+  decay: { mid: number; long: number } // decay on later periods' share of recent rate
+  floorPct: Record<GoalHorizon, number> // min cumulative gain as a fraction of current
+  capPct: Record<GoalHorizon, number> // max cumulative gain — diminishing-returns ceiling
   minShortGain: number // never recommend less than this for the short-term (kg)
   round: number // snap targets to this plate increment (kg)
 }
 
-// Strength gains decelerate with training age, so the recommended cumulative gain
-// grows sub-linearly across horizons. Rough guide only — see README.
+// History-driven recommendation, bounded by diminishing returns. We project the lifter's
+// recent kg/week forward (decaying its contribution each later period), then clamp the
+// cumulative gain between a small %-of-current floor (so a plateaued lift still gets a
+// target) and a %-of-current ceiling that itself decelerates per quarter (8 % in one
+// quarter, 15 % over two, 25 % over four — a hot streak can't project to absurd numbers).
+// Rough guide only — see README.
 export const DEFAULT_GOAL_CONFIG: GoalConfig = {
-  gainPct: { short: 0.03, mid: 0.055, long: 0.09 },
+  quarterWeeks: 13,
+  decay: { mid: 0.7, long: 0.5 },
+  floorPct: { short: 0.03, mid: 0.05, long: 0.08 },
+  capPct: { short: 0.08, mid: 0.15, long: 0.25 },
   minShortGain: 2.5,
   round: 2.5,
 }
@@ -746,8 +756,10 @@ export function currentMaxWeight(rows: SetRow[], lift: LiftKey): number {
   return pr ? pr.maxWeight : 0
 }
 
-// Recommended max-weight target per horizon: current snapped up by a decelerating
-// %, forced strictly increasing and at least one plate over current short-term.
+// Recommended max-weight target per horizon (see DEFAULT_GOAL_CONFIG). Short covers ~one
+// quarter, mid one more, long two more (to the fourth quarter-end); each cumulative gain
+// is the decayed rate projection clamped into [floor%, cap%] of current, then snapped to
+// the plate step and forced strictly increasing with short ≥ current + minShortGain.
 export function recommendedGoals(
   rows: SetRow[],
   lift: LiftKey,
@@ -755,12 +767,26 @@ export function recommendedGoals(
 ): Record<GoalHorizon, number> {
   const current = currentMaxWeight(rows, lift)
   if (current <= 0) return { short: 0, mid: 0, long: 0 }
+  const rate = recentRatePerWeek(rows, lift)
   const step = config.round
-  let short = snapTo(current * (1 + config.gainPct.short), step)
+  const q = config.quarterWeeks
+
+  // Cumulative gain projected from recent rate, its later share decayed.
+  const proj: Record<GoalHorizon, number> = {
+    short: rate * q,
+    mid: rate * q * (1 + config.decay.mid),
+    long: rate * q * (1 + config.decay.mid + 2 * config.decay.long),
+  }
+  const clampGain = (h: GoalHorizon) => {
+    const floor = Math.max(current * config.floorPct[h], h === 'short' ? config.minShortGain : 0)
+    return Math.min(Math.max(proj[h], floor), current * config.capPct[h])
+  }
+
+  let short = snapTo(current + clampGain('short'), step)
   if (short < current + config.minShortGain) short = snapTo(current + config.minShortGain, step)
-  let mid = snapTo(current * (1 + config.gainPct.mid), step)
+  let mid = snapTo(current + clampGain('mid'), step)
   if (mid <= short) mid = short + step
-  let long = snapTo(current * (1 + config.gainPct.long), step)
+  let long = snapTo(current + clampGain('long'), step)
   if (long <= mid) long = mid + step
   return { short, mid, long }
 }

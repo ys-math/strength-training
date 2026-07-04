@@ -42,6 +42,29 @@ describe('recommendedGoals', () => {
   it('returns zeros with no history', () => {
     expect(recommendedGoals([], 'BP')).toEqual({ short: 0, mid: 0, long: 0 })
   })
+
+  it('responds to recent progress, decelerates, and stays bounded by diminishing returns', () => {
+    const current = 100
+    const flat = [...session('2026-01-01', 'BP', current, 3)] // no recent rate
+    // +30 kg over 8 weeks → a hot ~3.75 kg/wk streak that must NOT project linearly.
+    const fast = [
+      ...session('2026-01-01', 'BP', current - 30, 3),
+      ...session('2026-02-26', 'BP', current, 3),
+    ]
+    const flatG = recommendedGoals(flat, 'BP')
+    const fastG = recommendedGoals(fast, 'BP')
+
+    // History responds: a fast gainer earns a higher short-term target than a flat lift.
+    expect(fastG.short).toBeGreaterThan(flatG.short)
+    // Diminishing returns: the whole-year per-quarter gain is no larger than the first
+    // quarter's, and the cumulative long gain is capped near capPct.long (25 %).
+    expect((fastG.long - current) / 4).toBeLessThanOrEqual(fastG.short - current)
+    expect(fastG.long - current).toBeLessThanOrEqual(current * 0.25 + 2.5)
+    // Still strictly increasing and snapped to 2.5 kg.
+    expect(fastG.mid).toBeGreaterThan(fastG.short)
+    expect(fastG.long).toBeGreaterThan(fastG.mid)
+    for (const v of [fastG.short, fastG.mid, fastG.long]) expect(v % 2.5).toBe(0)
+  })
 })
 
 describe('goalPace', () => {

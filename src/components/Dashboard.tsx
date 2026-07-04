@@ -2,9 +2,8 @@ import { useMemo } from 'react'
 import { LIFTS, type LiftKey, type SetRow } from '../lib/types'
 import { nextSessionSuggestion, overallStats, recommendedGoals, type GoalContext } from '../lib/metrics'
 import { fmtLongDate } from '../lib/format'
-import { horizonDate, weeksUntil } from '../lib/goals'
+import { quarterCheckpoints, weeksUntil } from '../lib/goals'
 import { useMetricMode } from '../hooks/useMetricMode'
-import { useGoals } from '../hooks/useGoals'
 import StatCards from './StatCards'
 import LatestWorkout from './LatestWorkout'
 import NextSession from './NextSession'
@@ -20,19 +19,18 @@ import ThemeSwitcher from './ThemeSwitcher'
 export default function Dashboard({ rows }: { rows: SetRow[] }) {
   const stats = useMemo(() => overallStats(rows), [rows])
   const { mode, setMode } = useMetricMode()
-  const { goals, setGoal, resetLift } = useGoals()
 
-  // Resolve the short-term goal per lift (user override ?? recommendation) and make
-  // the next-session suggestion goal-aware. Computed once here, then passed to the
-  // chart and the card so their projection stays consistent.
+  // Make the next-session suggestion goal-aware against the recommended short-term
+  // target (due at the next calendar quarter-end). Computed once here, then passed to
+  // the chart and the card so their projection stays consistent.
   const suggestions = useMemo(() => {
     const target: Partial<Record<LiftKey, number>> = {}
     for (const lift of LIFTS) {
-      target[lift.key] = goals[lift.key]?.short ?? recommendedGoals(rows, lift.key).short
+      target[lift.key] = recommendedGoals(rows, lift.key).short
     }
-    const goalCtx: GoalContext = { target, weeksLeft: weeksUntil(horizonDate(3)) }
+    const goalCtx: GoalContext = { target, weeksLeft: weeksUntil(quarterCheckpoints().horizonDate.short) }
     return nextSessionSuggestion(rows, goalCtx)
-  }, [rows, goals])
+  }, [rows])
 
   if (rows.length === 0) {
     return (
@@ -63,7 +61,7 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
           <LatestWorkout rows={rows} />
           <NextSession rows={rows} suggestions={suggestions} />
         </div>
-        <Roadmap rows={rows} goals={goals} setGoal={setGoal} resetLift={resetLift} />
+        <Roadmap rows={rows} />
         <ProgressChart rows={rows} mode={mode} suggestions={suggestions} />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <VolumeChart rows={rows} />
