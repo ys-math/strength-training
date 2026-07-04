@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { LIFTS, type SetRow } from '../lib/types'
 import { big4Series, cumulativeSeries, currentPrev, liftPR, liftSessions, round1 } from '../lib/metrics'
-import { fmtKg, fmtLongDate } from '../lib/format'
+import { fmtKg, fmtLongDate, fmtPlate } from '../lib/format'
 import type { MetricMode } from '../lib/mode'
 
 export default function StatCards({ rows, mode }: { rows: SetRow[]; mode: MetricMode }) {
@@ -39,7 +39,7 @@ export default function StatCards({ rows, mode }: { rows: SetRow[]; mode: Metric
           {heroTitle}
         </div>
         <div className="mt-1 text-3xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
-          {Math.round(big4.current)}
+          {mode === 'e1rm' ? Math.round(big4.current) : fmtPlate(big4.current)}
           <span className="ml-1 text-lg font-medium" style={{ color: 'var(--text-muted)' }}>
             kg
           </span>
@@ -66,7 +66,7 @@ export default function StatCards({ rows, mode }: { rows: SetRow[]; mode: Metric
               </span>
             </div>
             <div className="mt-2 text-2xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
-              {current > 0 ? Math.round(current) : '—'}
+              {current > 0 ? (mode === 'e1rm' ? Math.round(current) : fmtPlate(current)) : '—'}
               <span className="ml-1 text-sm font-medium" style={{ color: 'var(--text-muted)' }}>
                 kg
               </span>

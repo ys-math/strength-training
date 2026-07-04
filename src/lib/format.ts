@@ -14,6 +14,13 @@ export function fmtKg(n: number): string {
   return `${Math.round(n * 10) / 10} kg`
 }
 
+// Snap to the nearest 2.5 kg (barbell plate granularity) and format without a
+// trailing ".0" — so a real 67.5 kg lift reads as "67.5", not rounded up to "68".
+export function fmtPlate(n: number): string {
+  const snapped = Math.round(n / 2.5) * 2.5
+  return Number.isInteger(snapped) ? String(snapped) : snapped.toFixed(1)
+}
+
 export function fmtTonnage(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)} t`
   return `${Math.round(n)} kg`
