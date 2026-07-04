@@ -23,7 +23,9 @@ CSV export. Modern dark UI, deployed free on GitHub Pages.
 - **PR cards** — the PR in the active metric and a from-previous-PR delta.
 - **Latest workout** — the most recent session in full: every exercise, set, and volume, as chips.
 - **Next session** — a suggested load × reps per lift, shown as `previous → target` chips with the
-  change highlighted, plus a goal-pace chip (see [How suggestions work](#how-suggestions-work)).
+  change highlighted, plus a **heavy top set** for max-strength specificity, an automatic **back-off
+  after a layoff**, and a goal-pace chip (see [How suggestions work](#how-suggestions-work) and
+  [the theory → formula map](#the-science-theory--formula-map)).
 - **Weekly volume** — working tonnage (weight × reps), warmup sets excluded.
 - **Training frequency** — GitHub-style calendar heatmap of working sets per day.
 - **Per-lift detail** — est. 1RM vs. heaviest set for any single lift.
@@ -131,29 +133,51 @@ carries `projectedWeight` / `projectedE1rm` for this); a deload projects nothing
    overload** under the **SAID principle** (Specific Adaptation to Imposed Demands):
    gradually increasing mechanical demand drives adaptation, one of the most consistently
    replicated findings in resistance-training research. This is the primary driver because
-   it's the best-supported.
+   it's the best-supported. Formula (top of window reached): `load′ = load + Δ`,
+   `reps′ = lo` (Δ = smallest plate, 2.5 kg).
 
-2. **Plateau → deload** — if estimated 1RM is flat or declining across the last few
+2. **Heavy top set for specificity** — on any progression/hold session the engine appends
+   one **heavy, low-rep top set** at ≈ 90 % of your estimated 1RM. Rationale: because the
+   goal here is a **1RM / max weight**, the **SAID principle** says you must also train that
+   specific demand, and the **Size Principle** (Henneman) plus **rate coding / motor-unit
+   synchronization** say the highest-threshold (strongest) motor units are only recruited at
+   near-maximal force — moderate-rep accumulation alone leaves them under-trained. The target
+   load is `topLoad = round₂.₅(e1RM · I)` with intensity `I = 0.90`, and the reps come from
+   inverting Epley (`e1RM = load·(1 + r/30)` ⇒ `r = 30·(1/I − 1)` ≈ 3). It's shown as a
+   separate `+ heavy top set` chip and is omitted when it wouldn't be heavier than your
+   working set (you're already training heavy enough) or on a deload/return.
+
+3. **Detraining back-off** — if it's been a while since you last trained a lift, the next
+   suggestion **reduces the load** and flags a *return* session instead of chasing a PR on
+   detrained tissue. This is **reversibility** (loss of adaptation with time off), which is
+   very well documented. Retention factor: `R(g) = 1` for a gap `g ≤ g₀` (grace, 2 weeks),
+   else `R(g) = max(0.70, exp(−(g − g₀)/τ))` with `τ = 10` weeks; the suggested load is
+   `round₂.₅(lastLoad · R)`. Example: 4 weeks off → `R = exp(−(4−2)/10) = 0.82`, so a 60 kg
+   lift is eased back to `60 × 0.82 ≈ 49 →` **50 kg**. The 0.70 floor caps the back-off (we
+   never assume you lost more than ~30 %), and the decay constant is a deliberately
+   conservative heuristic — real detraining rates vary with training age and layoff length.
+
+4. **Plateau → deload** — if estimated 1RM is flat or declining across the last few
    sessions (default 3) and rule 1 isn't already calling for more load, suggest cutting
    volume (~half the sets) for a session or two rather than the load. This is loosely
    motivated by the **fitness–fatigue model** (Bannister, 1975), but note the trigger here
    is a crude e1RM-trend heuristic, **not** a fitted two-factor model — without soreness,
    HRV, or sleep data we can't do better, and shouldn't pretend to.
 
-3. **RPE autoregulation** — *only if* Strong's RPE column is populated. If effort is
+5. **RPE autoregulation** — *only if* Strong's RPE column is populated. If effort is
    trending up at the same load and reps, bias toward holding instead of progressing
    (RPE/RIR-based autoregulation; Zourdos et al., 2016; Helms et al., 2016). Evidence
    doesn't clearly rank RPE-based loading above percentage- or velocity-based approaches,
    so it's treated as a mild adjustment, not a primary driver — and it's a complete no-op
    when the export has no RPE (as most Strong exports don't).
 
-4. **No generic weekly-volume landmarks.** The familiar "~10–20 sets per muscle per week"
+6. **No generic weekly-volume landmarks.** The familiar "~10–20 sets per muscle per week"
    figures come from dose–response meta-analyses that pool *every* exercise hitting a muscle
    group (e.g. Schoenfeld, Ogborn & Krieger, 2017). This dashboard tracks a single exercise
    per lift, so raw "sets/week for this lift" isn't comparable to those numbers; weekly set
    counts are context only and never gate a suggestion.
 
-5. **No hardcoded periodization model or Prilepin table.** Head-to-head comparisons of
+7. **No hardcoded periodization model or Prilepin table.** Head-to-head comparisons of
    linear vs. undulating periodization return inconsistent, frequently null differences,
    and Prilepin's table is *observational* — distilled from watching successful lifters, not
    an experiment. Both are fine as optional reference (the RM tables above are exactly that)
@@ -176,11 +200,27 @@ is nothing to edit and nothing is stored.
 - **Recommended targets** (`recommendedGoals` in `metrics.ts`, config in `DEFAULT_GOAL_CONFIG`)
   are **history-driven but bounded by diminishing returns**: they project your **recent**
   best-to-date max-weight rate (`recentRatePerWeek`, ~8-week window) forward a quarter at a time,
-  **decaying** its later contribution (mid ×0.7, long ×0.5), then **clamp** the cumulative gain
-  between a small %-of-current floor (so even a plateaued lift still gets a modest target) and a
-  %-of-current **ceiling that itself decelerates** — ≈ 8 % in one quarter, 15 % over two, 25 % over
-  a year — so a hot 8-week streak can’t project to an absurd number. Results are snapped to 2.5 kg
-  and forced strictly increasing. Treat them as a **rough guide, not a promise**.
+  **decaying** its later contribution (mid ×0.7, long ×0.5), scale that by the two biological
+  factors below, then **clamp** the cumulative gain between a small %-of-current floor (so even a
+  plateaued lift still gets a modest target) and a %-of-current **ceiling that itself decelerates**
+  — ≈ 8 % in one quarter, 15 % over two, 25 % over a year — so a hot 8-week streak can’t project to
+  an absurd number. Results are snapped to 2.5 kg and forced strictly increasing. Per horizon:
+  `gain = clamp(projectedRate · ψ · σ, floor%·current, cap%·current)`. Treat them as a
+  **rough guide, not a promise**.
+- **Neural-phase factor ψ** (`neuralFactor`) — early strength gains are largely **neural**
+  (better recruitment/rate coding), and these come fast; later gains lean on slower **structural**
+  change, so trainees decelerate with experience. We scale the projected gain by
+  `ψ = max(0.55, exp(−(A − A₀)/τₙ))`, where `A` is your **logged training age** for the lift (weeks
+  from first to last session), `A₀ = 12` weeks of grace, `τₙ = 40` weeks. A novice keeps ψ ≈ 1; a
+  long-history lifter is pulled toward the 0.55 floor. **Caveat:** `A` only counts training *in the
+  export*, so it under-estimates true training age — treat ψ as a gentle nudge, not a verdict.
+- **Stimulus factor σ** (`stimulusFactor`) — adaptation tracks the demand you actually impose
+  (**SAID**), driven at the cellular level by **mechanical tension → mechanotransduction (mTOR)**
+  and a favourable **muscle-protein synthesis/breakdown balance**, which in turn need enough
+  training **frequency**. We temper the goal by `σ = clamp(0.6 + 0.4·min(1, f/f*), 0.6, 1)`, where
+  `f` = recent sessions/week for the lift and `f* = 1.5`. Train the lift often → σ ≈ 1 (full
+  projected gain); train it rarely → σ shrinks toward 0.6. **Caveat:** this is single-exercise
+  frequency, a proxy for tension dose, not a muscle-level volume prescription.
 - **Where you stand.** The **Next session** card carries a **pace** chip (`goalPace`) that compares
   the rate still required to hit the 3-month target, `(target − current) / weeks_left` to the
   quarter-end, against your recent rate → `ahead` / `on track` / `behind` / `met`.
@@ -190,6 +230,30 @@ is nothing to edit and nothing is stored.
   rep range, e1RM flat), it pushes one more rep instead of inserting a soft deload. It never
   invents larger jumps or removes a genuine below-range deload; progressive overload still happens
   one safe plate/rep at a time.
+
+## The science: theory → formula map
+
+The engine is built from established strength-training theory, but it's honest about where a
+principle is close to a law and where our operationalization is a heuristic squeezed from
+weight/reps/date data alone (no RPE, bodyweight, soreness, or velocity). Symbols: `e1RM` = Epley
+estimate `weight·(1+reps/30)`; `I` = relative intensity `load/e1RM`; `Δ` = 2.5 kg plate.
+
+| Theory | What it says | How the app uses it | Formula | Evidence |
+|---|---|---|---|---|
+| **SAID / Specificity** | Adaptation is specific to the imposed demand | 1RM goal ⇒ train heavy + specific: heavy top set, and goals gated by imposed stimulus | top set at `I≈0.90`; `σ` (below) | Near-law |
+| **Progressive Overload** | Adaptation needs a rising demand over time | Double progression on the top working set | top of range → `load+Δ`, `reps→lo` | Most-validated principle |
+| **Reversibility / Detraining** | Adaptation is lost with time off | Back off load & flag a *return* after a layoff | `R(g)=max(0.70, exp(−(g−2)/10))`, `load·R` | Well documented |
+| **Size Principle (Henneman)** | Motor units recruit small→large; high-threshold units need near-max force | The heavy top set recruits the strongest units moderate reps miss | reps `= 30·(1/I−1)` at `I=0.90` → ~3 | Established electrophysiology |
+| **Neural Adaptation (early gains)** | Early strength is mostly neural & fast; later gains slow | Neural-phase factor shrinks *advanced* lifters' goals | `ψ=max(0.55, exp(−(A−12)/40))` | Strong EMG / twitch-interpolation evidence |
+| **Rate Coding / MU Synchronization** | Firing rate & sync rise with heavy/max-effort work | Justifies the near-max heavy top set | (shares the `I=0.90` top set) | Solid neurophysiology |
+| **MPS / MPB balance** | Net protein balance must be positive over time; each session lifts MPS ~24–48 h | Frequency feeds the stimulus factor (re-stimulate before MPS returns to baseline) | part of `σ` (uses `f` = sessions/wk) | Core biochemistry |
+| **Mechanotransduction (mTOR)** | Mechanical tension activates mTORC1 → MPS | Tension/frequency dose gates goal size | part of `σ` | Strong molecular support |
+| **Mechanical Tension (primary)** | Tension is the main hypertrophy driver | Stimulus factor tempers goals when tension dose (frequency) is low | `σ=clamp(0.6+0.4·min(1,f/1.5),0.6,1)` | Well supported (metabolic stress / damage more debated) |
+
+Two honest limits carry through the whole table: (1) we infer **training age** and **frequency**
+only from the exported log, so both are lower bounds; and (2) tension/stimulus here is
+**single-exercise**, not the muscle-level weekly volume those hypertrophy findings are measured in.
+Everything above is a *decision aid*, not a coach.
 
 ## Updating your data
 

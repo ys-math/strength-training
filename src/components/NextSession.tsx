@@ -10,6 +10,7 @@ const ACTION_LABEL: Record<string, string> = {
   'add-rep': 'add rep',
   'build-reps': 'build reps',
   deload: 'deload',
+  return: 'return',
   'insufficient-data': 'no data',
 }
 
@@ -36,7 +37,10 @@ function PaceChip({ pace }: { pace: GoalPace }) {
 function DeltaBadge({ s }: { s: Suggestion }) {
   let text = 'hold'
   let color = 'var(--text-muted)'
-  if (s.loadDelta > 0) {
+  if (s.action === 'return' && s.loadDelta < 0) {
+    text = `▼ back off ${s.loadDelta} kg`
+    color = 'var(--lift-dl)'
+  } else if (s.loadDelta > 0) {
     text = `▲ +${s.loadDelta} kg`
     color = 'var(--delta-good)'
   } else if (s.repsDelta > 0) {
@@ -108,6 +112,18 @@ export default function NextSession({
                   )}
                   <SetChip g={{ weight: s.load, reps: s.reps, count: s.sets }} />
                   <DeltaBadge s={s} />
+                </div>
+              )}
+
+              {s.topSet && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>
+                    + heavy top set
+                  </span>
+                  <SetChip g={{ weight: s.topSet.load, reps: s.topSet.reps, count: s.topSet.sets }} />
+                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    specificity (~90% e1RM)
+                  </span>
                 </div>
               )}
 

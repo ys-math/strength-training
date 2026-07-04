@@ -48,8 +48,11 @@ strong_workouts.csv ?raw
   set + its reps/set-count, for the max-weight chart), `cumulativeSeries(rows, mode)` and
   `big4Series(rows, mode)` (each lift's / the summed best-to-date value, only climbs),
   `currentPrev`, `weeklyVolume` (ISO week), `dailyActivity`, `sessionDetails`, `overallStats`,
-  and `nextSessionSuggestion` (per-lift load × reps heuristic — config in
-  `DEFAULT_SUGGESTION_CONFIG`, theory documented in README's "How suggestions work").
+  and `nextSessionSuggestion(rows, goalCtx?, config?, now?)` (per-lift load × reps heuristic — config
+  in `DEFAULT_SUGGESTION_CONFIG`, theory in README's "How suggestions work" / "theory → formula map").
+  It also emits a heavy **`topSet`** (SAID/Size Principle, `heavyTopSet` at ~90% e1RM) and a
+  **`'return'`** action that backs the load off after a layoff (reversibility, `retentionFactor`);
+  `now` (default `latestTs(rows)`, `Date.now()` from `Dashboard`) is the detraining reference.
 - **`src/components/`** — presentational; each takes `rows: SetRow[]` and derives via
   `useMemo`. `Dashboard.tsx` composes them.
 
@@ -81,9 +84,11 @@ target is drawn on `ProgressChart` as a dashed horizontal `ReferenceLine` per vi
 calendar quarter-end from `quarterCheckpoints` in `src/lib/goals.ts` (which also holds `HORIZONS` and
 `weeksUntil`). `metrics.ts` provides `recommendedGoals` — **history-driven, bounded by diminishing
 returns**: it projects `recentRatePerWeek` forward a quarter at a time with per-period **decay** (mid
-×0.7, long ×0.5), then **clamps** the cumulative gain between a %-of-current floor and a decelerating
-%-of-current cap (8/15/25 %, so a hot streak can't project to absurd numbers), snapped to 2.5 kg and
-forced strictly increasing (`DEFAULT_GOAL_CONFIG`); `.short` feeds the chart lines and the
+×0.7, long ×0.5), scales it by two biological factors — `neuralFactor` **ψ** (training age via
+`trainingAgeWeeks`; advanced lifters gain slower) and `stimulusFactor` **σ** (frequency via
+`sessionFrequency`; sparse training tempers the goal) — then **clamps** the gain between a %-of-current
+floor and a decelerating %-of-current cap (8/15/25 %, so a hot streak can't project to absurd numbers),
+snapped to 2.5 kg and forced strictly increasing (`DEFAULT_GOAL_CONFIG`); `.short` feeds the chart lines and the
 goal-aware suggestion, `.mid`/`.long` keep the curve honest. `nextSessionSuggestion(rows, goalCtx?,
 config?)` is **goal-aware**: with a short-term `GoalContext` (built from the recommended short target
 in `Dashboard`) it fills `Suggestion.goalPace`/`requiredPerWeek` and, when *behind* pace and only

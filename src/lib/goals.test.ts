@@ -67,6 +67,49 @@ describe('recommendedGoals', () => {
   })
 })
 
+describe('recommendedGoals — biological scaling', () => {
+  // Shared recent 8-week climb 94 → 100 (rate ≈ 0.75 kg/wk), same for both lifters.
+  const recent = [
+    ...session('2026-04-06', 'BP', 94, 5),
+    ...session('2026-05-04', 'BP', 97.5, 5),
+    ...session('2026-06-01', 'BP', 100, 5),
+  ]
+  const sum = (g: { short: number; mid: number; long: number }) => g.short + g.mid + g.long
+
+  it('neural phase: an advanced (long-history) lifter gets smaller goals than a novice at the same current & rate', () => {
+    const novice = recommendedGoals(recent, 'BP')
+    // Same recent block, but a long prior history → older training age → smaller ψ.
+    const advanced = recommendedGoals([...session('2025-01-01', 'BP', 80, 5), ...recent], 'BP')
+    expect(advanced.long).toBeLessThan(novice.long)
+    expect(sum(advanced)).toBeLessThan(sum(novice))
+    // Both still strictly increasing.
+    for (const g of [novice, advanced]) {
+      expect(g.mid).toBeGreaterThan(g.short)
+      expect(g.long).toBeGreaterThan(g.mid)
+    }
+  })
+
+  it('stimulus: a higher training frequency yields larger goals than sparse training at the same rate', () => {
+    // Both climb 96 → 100 over 8 weeks (rate 0.5), same training age; only frequency differs.
+    const dense = [
+      ...session('2026-04-06', 'BP', 96, 5),
+      ...session('2026-04-13', 'BP', 97.5, 5),
+      ...session('2026-04-20', 'BP', 97.5, 5),
+      ...session('2026-04-27', 'BP', 97.5, 5),
+      ...session('2026-05-04', 'BP', 100, 5),
+      ...session('2026-05-11', 'BP', 100, 5),
+      ...session('2026-05-18', 'BP', 100, 5),
+      ...session('2026-05-25', 'BP', 100, 5),
+      ...session('2026-06-01', 'BP', 100, 5),
+    ]
+    const sparse = [...session('2026-04-06', 'BP', 96, 5), ...session('2026-06-01', 'BP', 100, 5)]
+    const dg = recommendedGoals(dense, 'BP')
+    const sg = recommendedGoals(sparse, 'BP')
+    expect(dg.long).toBeGreaterThan(sg.long)
+    expect(sum(dg)).toBeGreaterThan(sum(sg))
+  })
+})
+
 describe('goalPace', () => {
   it('classifies met / ahead / on-track / behind', () => {
     expect(goalPace(80, 80, 13, 0)).toBe('met')

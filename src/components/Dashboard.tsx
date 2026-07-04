@@ -28,7 +28,8 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
       target[lift.key] = recommendedGoals(rows, lift.key).short
     }
     const goalCtx: GoalContext = { target, weeksLeft: weeksUntil(quarterCheckpoints().horizonDate.short) }
-    return nextSessionSuggestion(rows, goalCtx)
+    // Real calendar "now" so the detraining back-off reflects an actual layoff.
+    return nextSessionSuggestion(rows, goalCtx, undefined, Date.now())
   }, [rows])
 
   if (rows.length === 0) {

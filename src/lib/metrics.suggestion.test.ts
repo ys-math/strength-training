@@ -120,6 +120,54 @@ describe('nextSessionSuggestion — RPE autoregulation', () => {
   })
 })
 
+describe('nextSessionSuggestion — heavy top set (specificity)', () => {
+  const now = new Date('2026-01-01T09:00:00').getTime()
+
+  it('attaches a heavy low-rep top set (~90% e1RM, heavier than the working set)', () => {
+    const rows = session('2026-01-01', 'BP', 60, 8, 3) // e1RM = 60*(1+8/30) = 76
+    const s = nextSessionSuggestion(rows, undefined, undefined, now).BP
+    expect(s.action).toBe('add-rep')
+    expect(s.topSet).not.toBeNull()
+    expect(s.topSet!.load).toBeGreaterThan(s.load) // heavier than the working set
+    expect(s.topSet!.reps).toBeLessThanOrEqual(3) // low-rep, strength-specific
+    expect(s.topSet!.sets).toBe(1)
+    // ~90% of e1RM (76) = 68.4 → snapped to a 2.5 plate
+    expect(s.topSet!.load).toBe(Math.round((76 * 0.9) / 2.5) * 2.5)
+  })
+
+  it('omits the top set on a deload', () => {
+    const rows = [...session('2026-01-01', 'BP', 60, 4, 3), ...session('2026-01-03', 'BP', 60, 5, 3)]
+    const s = nextSessionSuggestion(rows, undefined, undefined, now).BP
+    expect(s.action).toBe('deload')
+    expect(s.topSet).toBeNull()
+  })
+})
+
+describe('nextSessionSuggestion — detraining / reversibility', () => {
+  const WEEK = 7 * 86400000
+  const lastTs = new Date('2026-01-05T09:00:00').getTime()
+
+  it('backs the load off and marks a return after a gap past the grace window', () => {
+    const rows = session('2026-01-05', 'BP', 60, 8, 3)
+    const now = lastTs + 6 * WEEK // 6 weeks off: exp(−(6−2)/10)=0.67 → floored to 0.70
+    const s = nextSessionSuggestion(rows, undefined, undefined, now).BP
+    expect(s.action).toBe('return')
+    expect(s.load).toBeLessThan(60)
+    expect(s.load).toBeGreaterThanOrEqual(60 * 0.7) // retention floor
+    expect(s.loadDelta).toBeLessThan(0)
+    expect(s.topSet).toBeNull()
+    expect(s.rationale).toMatch(/reversibility|time off/i)
+  })
+
+  it('does not back off within the grace window', () => {
+    const rows = session('2026-01-05', 'BP', 60, 8, 3)
+    const now = lastTs + 1 * WEEK // within 2-week grace
+    const s = nextSessionSuggestion(rows, undefined, undefined, now).BP
+    expect(s.action).not.toBe('return')
+    expect(s.load).toBe(60)
+  })
+})
+
 describe('nextSessionSuggestion — coverage & edges', () => {
   it('reports insufficient data for a lift with no history', () => {
     const rows = session('2026-01-01', 'BP', 60, 8, 3)

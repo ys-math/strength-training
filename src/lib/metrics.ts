@@ -407,6 +407,12 @@ export interface SuggestionConfig {
   stagnationWindow: number // sessions inspected for the e1RM plateau check
   belowRangeRepeat: number // consecutive below-range sessions that trigger a deload
   deloadSetFactor: number // fraction of working sets kept on a deload
+  topSetIntensity: number // fraction of e1RM for the heavy specificity top set (Size Principle)
+  detraining: {
+    graceWeeks: number // gap tolerated before any strength loss is assumed
+    tauWeeks: number // detraining decay time-constant, weeks
+    minRetention: number // floor on the retention factor (don't back off more than this)
+  }
 }
 
 export const DEFAULT_SUGGESTION_CONFIG: SuggestionConfig = {
@@ -416,9 +422,17 @@ export const DEFAULT_SUGGESTION_CONFIG: SuggestionConfig = {
   stagnationWindow: 3,
   belowRangeRepeat: 2,
   deloadSetFactor: 0.5,
+  topSetIntensity: 0.9,
+  detraining: { graceWeeks: 2, tauWeeks: 10, minRetention: 0.7 },
 }
 
-export type SuggestionAction = 'increase-load' | 'add-rep' | 'build-reps' | 'deload' | 'insufficient-data'
+export type SuggestionAction =
+  | 'increase-load'
+  | 'add-rep'
+  | 'build-reps'
+  | 'deload'
+  | 'return'
+  | 'insufficient-data'
 
 // How the lift's recent trajectory tracks against its short-term max-weight goal.
 export type GoalPace = 'met' | 'ahead' | 'on-track' | 'behind'
@@ -437,6 +451,7 @@ export interface Suggestion {
   reps: number
   sets: number
   prev: TopSetSummary | null // last session's top working set
+  topSet: TopSetSummary | null // heavy low-rep specificity set to add (null on deload/return/no-data)
   loadDelta: number // target − prev, kg (0 when prev is null)
   repsDelta: number // target − prev reps
   setsDelta: number // target − prev sets
@@ -546,6 +561,7 @@ function buildSuggestion(
   target: TopSetSummary,
   prev: TopSetSummary | null,
   rationale: string,
+  topSet: TopSetSummary | null = null,
 ): Suggestion {
   return {
     lift,
@@ -554,6 +570,7 @@ function buildSuggestion(
     reps: target.reps,
     sets: target.sets,
     prev,
+    topSet,
     loadDelta: prev ? round1(target.load - prev.load) : 0,
     repsDelta: prev ? target.reps - prev.reps : 0,
     setsDelta: prev ? target.sets - prev.sets : 0,
@@ -563,6 +580,43 @@ function buildSuggestion(
     requiredPerWeek: null,
     rationale,
   }
+}
+
+// ---- Theory-grounded helpers (see README "How suggestions work") -------------
+
+// Reversibility / detraining: strength is retained for a short grace period, then
+// decays roughly exponentially with time off. Retention R(g) ∈ [minRetention, 1].
+export function retentionFactor(gapWeeks: number, cfg: SuggestionConfig['detraining']): number {
+  if (gapWeeks <= cfg.graceWeeks) return 1
+  return Math.max(cfg.minRetention, Math.exp(-(gapWeeks - cfg.graceWeeks) / cfg.tauWeeks))
+}
+
+// SAID / Size Principle / Rate coding: a heavy, low-rep top set at ~`intensity` of
+// current e1RM to recruit high-threshold motor units. Reps come from inverting Epley
+// (e1RM = load·(1+r/30) ⇒ r = 30·(1/intensity − 1)). Returns null when such a set
+// wouldn't be heavier than the working set (already specific enough).
+export function heavyTopSet(
+  bestE1rm: number,
+  workingLoad: number,
+  intensity: number,
+  plate: number,
+): TopSetSummary | null {
+  if (bestE1rm <= 0) return null
+  const load = Math.round((bestE1rm * intensity) / plate) * plate
+  if (load <= workingLoad) return null
+  const reps = Math.min(5, Math.max(1, Math.round(30 * (1 / intensity - 1))))
+  return { load, reps, sets: 1 }
+}
+
+// Latest logged session timestamp across all rows — the default "now" for detraining
+// so the engine stays pure/deterministic (the live dashboard passes Date.now()).
+export function latestTs(rows: SetRow[]): number {
+  let max = 0
+  for (const r of rows) {
+    const t = r.date.getTime()
+    if (t > max) max = t
+  }
+  return max
 }
 
 function deloadSuggestion(lift: LiftKey, last: TopSet, config: SuggestionConfig, why: string): Suggestion {
@@ -582,6 +636,7 @@ function suggestForLift(
   lift: LiftKey,
   config: SuggestionConfig,
   rpeAvailable: boolean,
+  now: number,
   goalCtx?: GoalContext,
 ): Suggestion {
   const label = LIFT_BY_KEY.get(lift)?.label ?? lift
@@ -594,6 +649,7 @@ function suggestForLift(
       reps: 0,
       sets: 0,
       prev: null,
+      topSet: null,
       loadDelta: 0,
       repsDelta: 0,
       setsDelta: 0,
@@ -624,6 +680,32 @@ function suggestForLift(
   }
   const g = { goalPace: pace, requiredPerWeek }
 
+  // 0. Reversibility / detraining — takes priority. After a layoff past the grace
+  // window, back the load off by the retention factor and ramp in, rather than
+  // pushing a PR on cold tissue. R(g) = exp(−(g−grace)/τ), floored at minRetention.
+  const gapWeeks = Math.max(0, (now - last.ts) / (7 * 86400000))
+  if (gapWeeks > config.detraining.graceWeeks) {
+    const R = retentionFactor(gapWeeks, config.detraining)
+    const load = Math.max(inc, Math.round((last.load * R) / inc) * inc)
+    const reps = Math.min(hi, Math.max(lo, last.reps))
+    return {
+      ...buildSuggestion(
+        lift,
+        'return',
+        { load, reps, sets },
+        prev,
+        `~${Math.round(gapWeeks)} wk since your last ${label} — strength fades with time off ` +
+          `(reversibility). Ease back to ~${Math.round(R * 100)}% of your last load and rebuild.`,
+      ),
+      ...g,
+    }
+  }
+
+  // The heavy specificity top set (SAID / Size Principle) attached to progression &
+  // hold suggestions — null on deload/return where the intent is to ease off. Surfaced
+  // as its own chip on the card, so it stays out of the working-set rationale text.
+  const topSet = heavyTopSet(last.bestE1rm, last.load, config.topSetIntensity, inc)
+
   // 1. Double progression on the top working set — strongest signal.
   if (last.reps >= hi) {
     // 3. RPE (only if tracked): rising effort at the same load/reps → hold.
@@ -635,6 +717,7 @@ function suggestForLift(
           { load: last.load, reps: last.reps, sets },
           prev,
           `Hit the top of the ${lo}–${hi} range, but RPE is rising at the same load — hold before adding weight.`,
+          topSet,
         ),
         ...g,
       }
@@ -646,6 +729,7 @@ function suggestForLift(
         { load: last.load + inc, reps: lo, sets },
         prev,
         `Hit ${sets}×${last.reps} @ ${last.load}kg last session (top of ${lo}–${hi} range).`,
+        topSet,
       ),
       ...g,
     }
@@ -665,6 +749,7 @@ function suggestForLift(
             { load: last.load, reps: last.reps + 1, sets },
             prev,
             `Behind your goal pace and only mildly stalled — push +1 rep before easing off.`,
+            topSet,
           ),
           ...g,
         }
@@ -681,6 +766,7 @@ function suggestForLift(
         { load: last.load, reps: last.reps + 1, sets },
         prev,
         `Reps within the ${lo}–${hi} range but not at the top yet.`,
+        topSet,
       ),
       ...g,
     }
@@ -701,6 +787,7 @@ function suggestForLift(
       { load: last.load, reps: last.reps + 1, sets },
       prev,
       `Below the ${lo}–${hi} range — rebuild reps at this load before adding weight.`,
+      topSet,
     ),
     ...g,
   }
@@ -713,11 +800,12 @@ export function nextSessionSuggestion(
   rows: SetRow[],
   goalCtx?: GoalContext,
   config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG,
+  now: number = latestTs(rows),
 ): Record<LiftKey, Suggestion> {
   const rpeAvailable = hasRpeData(rows)
   const result = {} as Record<LiftKey, Suggestion>
   for (const lift of LIFTS) {
-    result[lift.key] = suggestForLift(rows, lift.key, config, rpeAvailable, goalCtx)
+    result[lift.key] = suggestForLift(rows, lift.key, config, rpeAvailable, now, goalCtx)
   }
   return result
 }
@@ -731,14 +819,26 @@ export interface GoalConfig {
   capPct: Record<GoalHorizon, number> // max cumulative gain — diminishing-returns ceiling
   minShortGain: number // never recommend less than this for the short-term (kg)
   round: number // snap targets to this plate increment (kg)
+  neural: {
+    ageGraceWeeks: number // logged training age below which no neural discount applies
+    tauWeeks: number // decay constant for the neural-phase factor
+    psiMin: number // floor on ψ (advanced lifters still gain, just slower)
+  }
+  stimulus: {
+    windowWeeks: number // recent window used to measure training frequency
+    freqTarget: number // sessions/week at/above which stimulus is considered full
+    sigmaFloor: number // floor on σ (even sparse training keeps this share of the gain)
+  }
 }
 
 // History-driven recommendation, bounded by diminishing returns. We project the lifter's
-// recent kg/week forward (decaying its contribution each later period), then clamp the
+// recent kg/week forward (decaying its contribution each later period), scale it by two
+// biological factors — the neural-phase factor ψ (fast early gains slow with training age)
+// and the stimulus factor σ (adaptation tracks imposed frequency/tension) — then clamp the
 // cumulative gain between a small %-of-current floor (so a plateaued lift still gets a
 // target) and a %-of-current ceiling that itself decelerates per quarter (8 % in one
 // quarter, 15 % over two, 25 % over four — a hot streak can't project to absurd numbers).
-// Rough guide only — see README.
+// Rough guide only — see README "How goals work".
 export const DEFAULT_GOAL_CONFIG: GoalConfig = {
   quarterWeeks: 13,
   decay: { mid: 0.7, long: 0.5 },
@@ -746,6 +846,8 @@ export const DEFAULT_GOAL_CONFIG: GoalConfig = {
   capPct: { short: 0.08, mid: 0.15, long: 0.25 },
   minShortGain: 2.5,
   round: 2.5,
+  neural: { ageGraceWeeks: 12, tauWeeks: 40, psiMin: 0.55 },
+  stimulus: { windowWeeks: 8, freqTarget: 1.5, sigmaFloor: 0.6 },
 }
 
 const snapTo = (v: number, step: number) => Math.round(v / step) * step
@@ -754,6 +856,43 @@ const snapTo = (v: number, step: number) => Math.round(v / step) * step
 export function currentMaxWeight(rows: SetRow[], lift: LiftKey): number {
   const pr = liftPR(liftSessions(rows, lift))
   return pr ? pr.maxWeight : 0
+}
+
+// Logged training age for a lift (weeks from first to last working session). Only a
+// lower bound on true training age — we can't see training before the export.
+export function trainingAgeWeeks(rows: SetRow[], lift: LiftKey): number {
+  const tops = topWorkingSets(rows, lift)
+  if (tops.length < 2) return 0
+  return (tops[tops.length - 1].ts - tops[0].ts) / (7 * 86400000)
+}
+
+// Sessions per week for a lift over the trailing `windowWeeks` (0 when too little data).
+export function sessionFrequency(rows: SetRow[], lift: LiftKey, windowWeeks: number): number {
+  const tops = topWorkingSets(rows, lift)
+  if (tops.length < 2) return 0
+  const W = 7 * 86400000
+  const lastTs = tops[tops.length - 1].ts
+  const cutoff = lastTs - windowWeeks * W
+  const inWindow = tops.filter((t) => t.ts >= cutoff)
+  if (inWindow.length < 2) return 0
+  const span = (lastTs - inWindow[0].ts) / W
+  return span >= 1 ? inWindow.length / span : 0
+}
+
+// Neural-adaptation / diminishing-returns factor ψ ∈ [psiMin, 1]. ≈1 for a novice
+// (early gains are largely neural and fast); decays toward psiMin as logged training
+// age grows (later gains lean on slower structural change).
+export function neuralFactor(ageWeeks: number, cfg: GoalConfig['neural']): number {
+  if (ageWeeks <= cfg.ageGraceWeeks) return 1
+  return Math.max(cfg.psiMin, Math.exp(-(ageWeeks - cfg.ageGraceWeeks) / cfg.tauWeeks))
+}
+
+// Stimulus factor σ ∈ [sigmaFloor, 1] from training frequency — a proxy for the imposed
+// mechanical-tension / MPS dose (SAID, mTOR, mechanotransduction). Full at freqTarget,
+// tempered (not zeroed) below it. Guards to 1 when frequency is unmeasurable.
+export function stimulusFactor(freqPerWeek: number, cfg: GoalConfig['stimulus']): number {
+  if (freqPerWeek <= 0) return 1
+  return Math.max(cfg.sigmaFloor, Math.min(1, cfg.sigmaFloor + (1 - cfg.sigmaFloor) * (freqPerWeek / cfg.freqTarget)))
 }
 
 // Recommended max-weight target per horizon (see DEFAULT_GOAL_CONFIG). Short covers ~one
@@ -771,11 +910,18 @@ export function recommendedGoals(
   const step = config.round
   const q = config.quarterWeeks
 
-  // Cumulative gain projected from recent rate, its later share decayed.
+  // Biological scaling of the raw rate projection: ψ (neural phase, by training age)
+  // and σ (stimulus, by training frequency). Both ≤ 1, so they only temper — the floor
+  // still guarantees a minimum target and the cap still bounds the maximum.
+  const psi = neuralFactor(trainingAgeWeeks(rows, lift), config.neural)
+  const sigma = stimulusFactor(sessionFrequency(rows, lift, config.stimulus.windowWeeks), config.stimulus)
+  const scale = psi * sigma
+
+  // Cumulative gain projected from recent rate, its later share decayed, then scaled.
   const proj: Record<GoalHorizon, number> = {
-    short: rate * q,
-    mid: rate * q * (1 + config.decay.mid),
-    long: rate * q * (1 + config.decay.mid + 2 * config.decay.long),
+    short: rate * q * scale,
+    mid: rate * q * (1 + config.decay.mid) * scale,
+    long: rate * q * (1 + config.decay.mid + 2 * config.decay.long) * scale,
   }
   const clampGain = (h: GoalHorizon) => {
     const floor = Math.max(current * config.floorPct[h], h === 'short' ? config.minShortGain : 0)
