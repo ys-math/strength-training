@@ -67,17 +67,21 @@ function makeEndLabel(lastIndex: number, color: string, text: string, dyExtra: n
   }
 }
 
-// Groups lifts whose final plotted value ties (within rounding) and spreads their
-// end-labels vertically so they don't render on top of one another.
-function endLabelOffsets(
-  data: Array<Partial<Record<LiftKey, number>>>,
-  lastIndex: Record<string, number>,
-  keys: LiftKey[],
-): Record<string, number> {
-  const groups = new Map<number, string[]>()
-  for (const key of keys) {
-    const idx = lastIndex[key]
-    const value = idx != null ? data[idx]?.[key] : undefined
+// Hollow "target" ring drawn only at the projected point (the dashed line's tip),
+// so it reads as a goal rather than a logged set.
+function makeProjDot(projIndex: number, color: string) {
+  return function ProjDot(props: { cx?: number; cy?: number; index?: number }) {
+    if (props.index !== projIndex || props.cx == null || props.cy == null) return null
+    return <circle cx={props.cx} cy={props.cy} r={4} fill="var(--surface-1)" stroke={color} strokeWidth={2} />
+  }
+}
+
+// Spread tied end-labels vertically (12px) so lifts finishing at the same value
+// don't overprint. `points` is each lift's rightmost { value } to label.
+function labelOffsetsFor(points: Partial<Record<LiftKey, number>>): Record<string, number> {
+  const groups = new Map<number, LiftKey[]>()
+  for (const key of Object.keys(points) as LiftKey[]) {
+    const value = points[key]
     if (value == null) continue
     const rounded = Math.round(value * 10) / 10
     const group = groups.get(rounded) ?? []
@@ -85,11 +89,10 @@ function endLabelOffsets(
     groups.set(rounded, group)
   }
   const offsets: Record<string, number> = {}
-  const step = 12
   for (const group of groups.values()) {
     const mid = (group.length - 1) / 2
     group.forEach((key, i) => {
-      offsets[key] = Math.round((i - mid) * step)
+      offsets[key] = Math.round((i - mid) * 12)
     })
   }
   return offsets
@@ -114,11 +117,6 @@ export default function ProgressChart({ rows, mode }: { rows: SetRow[]; mode: Me
     }
     return map
   }, [data])
-
-  const labelOffsets = useMemo(
-    () => endLabelOffsets(data, lastIndex, LIFTS.map((l) => l.key)),
-    [data, lastIndex],
-  )
 
   const suggestions = useMemo(() => nextSessionSuggestion(rows), [rows])
 
@@ -164,6 +162,28 @@ export default function ProgressChart({ rows, mode }: { rows: SetRow[]; mode: Me
     return { chartData: aug, projected: true }
   }, [data, lastIndex, suggestions, mode])
 
+  // Index of the appended projected row within chartData (a projected lift's dashed
+  // series and its end-label live at this index).
+  const projIndex = data.length
+
+  // Each lift's rightmost plotted value — the projected tip when it projects, else
+  // its last real point — used to place and de-collide the end labels.
+  const rightMost = useMemo<Partial<Record<LiftKey, number>>>(() => {
+    const m: Partial<Record<LiftKey, number>> = {}
+    for (const lift of LIFTS) {
+      const pv = projValue(lift.key)
+      if (projected && pv != null) m[lift.key] = pv
+      else {
+        const li = lastIndex[lift.key]
+        const v = li != null ? (data[li] as unknown as Record<string, number | undefined>)[lift.key] : undefined
+        if (v != null) m[lift.key] = v
+      }
+    }
+    return m
+  }, [data, lastIndex, projected, suggestions, mode])
+
+  const labelOffsets = useMemo(() => labelOffsetsFor(rightMost), [rightMost])
+
   const toggle = (k: LiftKey) =>
     setHidden((prev) => {
       const next = new Set(prev)
@@ -207,7 +227,7 @@ export default function ProgressChart({ rows, mode }: { rows: SetRow[]; mode: Me
     <ChartCard title={title} subtitle={subtitle} right={legend}>
       <div style={{ width: '100%', height: 340 }}>
         <ResponsiveContainer>
-          <LineChart data={chartData} margin={{ top: 8, right: 44, bottom: 4, left: 4 }}>
+          <LineChart data={chartData} margin={{ top: 8, right: 56, bottom: 4, left: 4 }}>
             <CartesianGrid stroke="var(--gridline)" vertical={false} />
             <XAxis
               dataKey="dateKey"
@@ -244,7 +264,13 @@ export default function ProgressChart({ rows, mode }: { rows: SetRow[]; mode: Me
                   activeDot={{ r: 4, strokeWidth: 0 }}
                   connectNulls
                   isAnimationActive={false}
-                  label={makeEndLabel(lastIndex[lift.key], lift.color, lift.key, labelOffsets[lift.key] ?? 0) as never}
+                  label={
+                    // Non-projecting lifts (deload / no history) keep the code label at
+                    // their last real point; projecting lifts label the dashed tip instead.
+                    projected && projValue(lift.key) != null
+                      ? undefined
+                      : (makeEndLabel(lastIndex[lift.key], lift.color, lift.key, labelOffsets[lift.key] ?? 0) as never)
+                  }
                 />
               ),
             )}
@@ -258,11 +284,12 @@ export default function ProgressChart({ rows, mode }: { rows: SetRow[]; mode: Me
                     stroke={lift.color}
                     strokeWidth={2}
                     strokeDasharray="5 4"
-                    dot={{ r: 3, strokeWidth: 0, fill: lift.color }}
+                    dot={makeProjDot(projIndex, lift.color) as never}
                     activeDot={false}
                     connectNulls
                     isAnimationActive={false}
                     legendType="none"
+                    label={makeEndLabel(projIndex, lift.color, lift.key, labelOffsets[lift.key] ?? 0) as never}
                   />
                 ),
               )}
