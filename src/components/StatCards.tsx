@@ -31,7 +31,7 @@ export default function StatCards({ rows, mode }: { rows: SetRow[]; mode: Metric
       <div
         className="col-span-2 flex flex-col rounded-2xl p-5 lg:col-span-1"
         style={{
-          background: 'linear-gradient(160deg, rgba(57,135,229,0.18), var(--surface-1))',
+          background: 'var(--hero-gradient)',
           border: '1px solid var(--border)',
         }}
       >

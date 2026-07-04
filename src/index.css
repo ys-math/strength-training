@@ -19,6 +19,7 @@
   --border:         rgba(255, 255, 255, 0.10);
   --hover-tint:     rgba(255, 255, 255, 0.04);
   --delta-good:     #0ca30c;
+  --hero-gradient:  linear-gradient(160deg, rgba(57, 135, 229, 0.18), var(--surface-1));
 
   /* Categorical lift colors */
   --lift-bp:  #3987e5; /* blue   — Bench Press   */
@@ -47,6 +48,7 @@
   --border:         rgba(0, 0, 0, 0.08);
   --hover-tint:     rgba(0, 0, 0, 0.04);
   --delta-good:     #0a8f0a;
+  --hero-gradient:  linear-gradient(160deg, rgba(57, 135, 229, 0.16), var(--surface-1));
 
   --lift-bp:  #2166c9;
   --lift-sq:  #0f8a63;
@@ -74,6 +76,8 @@
   --border:         rgba(107, 58, 26, 0.15);
   --hover-tint:     rgba(107, 58, 26, 0.06);
   --delta-good:     #4c7a3a;
+  /* Warm sunset gradation: terracotta → mustard → warm paper. */
+  --hero-gradient:  linear-gradient(160deg, rgba(181, 86, 58, 0.30) 0%, rgba(192, 138, 46, 0.18) 52%, var(--surface-1) 100%);
 
   --lift-bp:  #b5563a; /* terracotta */
   --lift-sq:  #5c8a52; /* sage       */
