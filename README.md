@@ -134,8 +134,8 @@ is nothing to edit and nothing is stored.
 - **Stimulus factor σ** (`stimulusFactor`) — adaptation tracks the demand you actually impose
   (**SAID**), driven at the cellular level by **mechanical tension → mechanotransduction (mTOR)**
   and a favourable **muscle-protein synthesis/breakdown balance**, which in turn need enough
-  training **frequency**. We temper the goal by $\sigma = \mathrm{clamp}(0.6 + 0.4\cdot\min(1,\ f/f^*),\ 0.6,\ 1)$,
-  where $f$ = recent sessions/week for the lift and $f^* = 1.5$. Train the lift often → $\sigma \approx 1$ (full
+  training **frequency**. We temper the goal by $\sigma = \mathrm{clamp}(0.6 + 0.4\cdot\min(1,\ f/f_{\text{target}}),\ 0.6,\ 1)$,
+  where $f$ = recent sessions/week for the lift and $f_{\text{target}} = 1.5$. Train the lift often → $\sigma \approx 1$ (full
   projected gain); train it rarely → $\sigma$ shrinks toward 0.6. **Caveat:** this is single-exercise
   frequency, a proxy for tension dose, not a muscle-level volume prescription.
 - **Where you stand.** The **Next session** card carries a **pace** chip (`goalPace`) that compares
