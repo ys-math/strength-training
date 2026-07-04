@@ -1,5 +1,6 @@
-import { LIFTS, type LiftKey, type LiftPR, type LiftSession, type SetRow } from './types'
+import { LIFTS, LIFT_BY_KEY, type LiftKey, type LiftPR, type LiftSession, type SetRow } from './types'
 import type { MetricMode } from './mode'
+import { fmtPlate } from './format'
 
 export const round1 = (n: number) => Math.round(n * 10) / 10
 export const round0 = (n: number) => Math.round(n)
@@ -389,4 +390,245 @@ export function frequencyStats(rows: SetRow[]): FrequencyStats {
   const sessionsThisWeek = days.filter((d) => d >= weekStart).length
 
   return { avgSessionsPerWeek, mostActiveWeekday, sessionsThisWeek }
+}
+
+// ---- Next-session suggestion --------------------------------------------------
+//
+// A per-lift "what to do next" heuristic computed purely from set history. The
+// rules and the theory behind each are documented in README.md ("How suggestions
+// work"). All tunable thresholds live in DEFAULT_SUGGESTION_CONFIG — no magic
+// numbers scattered through the branching.
+
+export interface SuggestionConfig {
+  repRange: [number, number] // default working-rep window (inclusive)
+  repRangeByLift: Partial<Record<LiftKey, [number, number]>> // per-lift overrides
+  loadIncrement: number // smallest plate jump, kg
+  stagnationWindow: number // sessions inspected for the e1RM plateau check
+  belowRangeRepeat: number // consecutive below-range sessions that trigger a deload
+  deloadSetFactor: number // fraction of working sets kept on a deload
+}
+
+export const DEFAULT_SUGGESTION_CONFIG: SuggestionConfig = {
+  repRange: [6, 10],
+  repRangeByLift: {},
+  loadIncrement: 2.5,
+  stagnationWindow: 3,
+  belowRangeRepeat: 2,
+  deloadSetFactor: 0.5,
+}
+
+export type SuggestionAction = 'increase-load' | 'add-rep' | 'build-reps' | 'deload' | 'insufficient-data'
+
+export interface Suggestion {
+  lift: LiftKey
+  action: SuggestionAction
+  load: number // suggested working load, kg (0 when there's no history)
+  reps: number // suggested / target reps
+  sets: number // suggested set count
+  loadDelta: number // kg added vs. last session (0 unless increasing load)
+  headline: string // e.g. "4 × 6 @ 102.5kg (+2.5kg)"
+  rationale: string // one-line explanation
+}
+
+// True once any row carries an RPE value. Strong always emits the RPE *column*,
+// so header presence alone means nothing — we key off populated data.
+export function hasRpeData(rows: SetRow[]): boolean {
+  return rows.some((r) => r.rpe != null)
+}
+
+// The heaviest working set of each session for a lift, tie-broken by reps, with
+// the count of working sets sharing that top load, the session's best e1RM, and
+// the hardest RPE logged at that load (null when RPE isn't tracked).
+interface TopSet {
+  dateKey: string
+  ts: number
+  load: number
+  reps: number
+  sets: number
+  bestE1rm: number
+  rpe: number | null
+}
+
+function topWorkingSets(rows: SetRow[], lift: LiftKey): TopSet[] {
+  const byDate = new Map<string, SetRow[]>()
+  for (const r of rows) {
+    if (r.lift !== lift || r.isWarmup) continue
+    const list = byDate.get(r.dateKey)
+    if (list) list.push(r)
+    else byDate.set(r.dateKey, [r])
+  }
+
+  const out: TopSet[] = []
+  for (const [dateKey, sets] of byDate) {
+    let load = 0
+    let reps = 0
+    let bestE1rm = 0
+    for (const s of sets) {
+      if (s.e1rm > bestE1rm) bestE1rm = s.e1rm
+      if (s.weight > load || (s.weight === load && s.reps > reps)) {
+        load = s.weight
+        reps = s.reps
+      }
+    }
+    const atTop = sets.filter((s) => s.weight === load)
+    const rpes = atTop.map((s) => s.rpe).filter((v): v is number => v != null)
+    out.push({
+      dateKey,
+      ts: sets[0].date.getTime(),
+      load,
+      reps,
+      sets: atTop.length,
+      bestE1rm,
+      rpe: rpes.length ? Math.max(...rpes) : null,
+    })
+  }
+  out.sort((a, b) => a.ts - b.ts)
+  return out
+}
+
+// e1RM flat or declining across the trailing `window` sessions (no net gain).
+function isStagnant(tops: TopSet[], window: number): boolean {
+  if (tops.length < window) return false
+  const recent = tops.slice(-window)
+  return recent[recent.length - 1].bestE1rm <= recent[0].bestE1rm
+}
+
+// How many of the most recent sessions in a row landed below the rep range.
+function trailingBelowRange(tops: TopSet[], lo: number): number {
+  let n = 0
+  for (let i = tops.length - 1; i >= 0; i--) {
+    if (tops[i].reps < lo) n += 1
+    else break
+  }
+  return n
+}
+
+// RPE climbing at an unchanged top load & reps between the last two sessions.
+function rpeRisingAtConstant(tops: TopSet[]): boolean {
+  if (tops.length < 2) return false
+  const a = tops[tops.length - 2]
+  const b = tops[tops.length - 1]
+  if (a.rpe == null || b.rpe == null) return false
+  return b.load === a.load && b.reps === a.reps && b.rpe > a.rpe
+}
+
+const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s)
+
+function deloadSuggestion(lift: LiftKey, last: TopSet, config: SuggestionConfig, why: string): Suggestion {
+  const sets = Math.max(1, Math.round(last.sets * config.deloadSetFactor))
+  return {
+    lift,
+    action: 'deload',
+    load: last.load,
+    reps: last.reps,
+    sets,
+    loadDelta: 0,
+    headline: `deload — ${sets} × ${last.reps} @ ${fmtPlate(last.load)}kg (~half volume)`,
+    rationale: `${cap(why)}; ease off for a session or two. Heuristic (e1RM trend), not a fatigue model.`,
+  }
+}
+
+function suggestForLift(
+  rows: SetRow[],
+  lift: LiftKey,
+  config: SuggestionConfig,
+  rpeAvailable: boolean,
+): Suggestion {
+  const label = LIFT_BY_KEY.get(lift)?.label ?? lift
+  const tops = topWorkingSets(rows, lift)
+  if (tops.length === 0) {
+    return {
+      lift,
+      action: 'insufficient-data',
+      load: 0,
+      reps: 0,
+      sets: 0,
+      loadDelta: 0,
+      headline: 'no working sets logged yet',
+      rationale: `No ${label} history in the data yet.`,
+    }
+  }
+
+  const last = tops[tops.length - 1]
+  const [lo, hi] = config.repRangeByLift[lift] ?? config.repRange
+  const inc = config.loadIncrement
+  const sets = Math.max(1, last.sets)
+  const stagnant = isStagnant(tops, config.stagnationWindow)
+
+  // 1. Double progression on the top working set — strongest signal.
+  if (last.reps >= hi) {
+    // 3. RPE (only if tracked): rising effort at the same load/reps → hold.
+    if (rpeAvailable && rpeRisingAtConstant(tops)) {
+      return {
+        lift,
+        action: 'add-rep',
+        load: last.load,
+        reps: last.reps,
+        sets,
+        loadDelta: 0,
+        headline: `hold ${sets} × ${last.reps} @ ${fmtPlate(last.load)}kg (RPE climbing)`,
+        rationale: `Hit the top of the ${lo}–${hi} range, but RPE is rising at the same load — hold before adding weight.`,
+      }
+    }
+    const load = last.load + inc
+    return {
+      lift,
+      action: 'increase-load',
+      load,
+      reps: lo,
+      sets,
+      loadDelta: inc,
+      headline: `${sets} × ${lo} @ ${fmtPlate(load)}kg (+${fmtPlate(inc)}kg)`,
+      rationale: `Hit ${sets}×${last.reps} @ ${fmtPlate(last.load)}kg last session (top of ${lo}–${hi} range).`,
+    }
+  }
+
+  if (last.reps >= lo) {
+    // Within range: add a rep, unless e1RM has plateaued (2. deload).
+    if (stagnant) {
+      return deloadSuggestion(lift, last, config, `est. 1RM flat over the last ${config.stagnationWindow} sessions`)
+    }
+    return {
+      lift,
+      action: 'add-rep',
+      load: last.load,
+      reps: last.reps,
+      sets,
+      loadDelta: 0,
+      headline: `hold ${sets} × ${last.reps} @ ${fmtPlate(last.load)}kg, aim for +1 rep`,
+      rationale: `Reps within the ${lo}–${hi} range but not at the top yet.`,
+    }
+  }
+
+  // Below range: hold and build reps, unless it's dragging on (2. deload).
+  const belowRepeated = trailingBelowRange(tops, lo) >= config.belowRangeRepeat
+  if (belowRepeated || stagnant) {
+    const why = belowRepeated
+      ? `stuck below ${lo} reps ${config.belowRangeRepeat}+ sessions running`
+      : `est. 1RM flat over the last ${config.stagnationWindow} sessions`
+    return deloadSuggestion(lift, last, config, why)
+  }
+  return {
+    lift,
+    action: 'build-reps',
+    load: last.load,
+    reps: lo,
+    sets,
+    loadDelta: 0,
+    headline: `hold ${sets} × ${last.reps} @ ${fmtPlate(last.load)}kg, build toward ${lo} reps`,
+    rationale: `Below the ${lo}–${hi} range — rebuild reps at this load before adding weight.`,
+  }
+}
+
+// Per-lift next-session suggestion, computed purely from set history.
+export function nextSessionSuggestion(
+  rows: SetRow[],
+  config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG,
+): Record<LiftKey, Suggestion> {
+  const rpeAvailable = hasRpeData(rows)
+  const result = {} as Record<LiftKey, Suggestion>
+  for (const lift of LIFTS) {
+    result[lift.key] = suggestForLift(rows, lift.key, config, rpeAvailable)
+  }
+  return result
 }

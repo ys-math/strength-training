@@ -13,6 +13,7 @@ interface RawRow {
   'Set Order': string
   Weight: string
   Reps: string
+  RPE?: string // present in Strong's header but usually blank
 }
 
 // Strong exports "2026-04-24 09:40:00" (local time, space-separated).
@@ -48,6 +49,9 @@ export function parseWorkouts(csv: string): SetRow[] {
     const weight = Number(r.Weight) || 0
     const reps = Number(r.Reps) || 0
     const lift = LIFT_BY_EXERCISE.get(exercise)?.key ?? null
+    const rpeRaw = (r.RPE ?? '').trim()
+    const rpeNum = rpeRaw === '' ? NaN : Number(rpeRaw)
+    const rpe = Number.isFinite(rpeNum) && rpeNum > 0 ? rpeNum : null
 
     rows.push({
       date,
@@ -60,6 +64,7 @@ export function parseWorkouts(csv: string): SetRow[] {
       weight,
       reps,
       e1rm: epley(weight, reps),
+      rpe,
     })
   }
 

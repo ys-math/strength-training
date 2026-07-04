@@ -17,6 +17,8 @@ CSV export. Modern dark UI, deployed free on GitHub Pages.
   or actual heaviest weight — hover a point for its reps and set count).
 - **PR cards** — the PR in the active metric and a from-previous-PR delta.
 - **Latest workout** — the most recent session in full: every exercise, set, and volume.
+- **Next session** — a suggested load × reps per lift from your history (see
+  [How suggestions work](#how-suggestions-work)).
 - **Weekly volume** — working tonnage (weight × reps), warmup sets excluded.
 - **Training frequency** — GitHub-style calendar heatmap of working sets per day.
 - **Per-lift detail** — est. 1RM vs. heaviest set for any single lift.
@@ -109,6 +111,47 @@ to the nearest kg.
 |       147.5 | 152 | 157 | 162 | 167 | 172 | 177 | 182 | 187 | 192 | 197 |
 |         150 | 155 | 160 | 165 | 170 | 175 | 180 | 185 | 190 | 195 | 200 |
 
+## How suggestions work
+
+The **Next session** card proposes a load × reps for each lift, computed purely from
+your set history (`nextSessionSuggestion` in `src/lib/metrics.ts`; all thresholds live in
+`DEFAULT_SUGGESTION_CONFIG`). It's intentionally simple. Below is why each rule is written
+the way it is — and, just as importantly, where it rests on solid evidence versus where
+it's an admitted heuristic.
+
+1. **Double progression** — add reps within a rep window (default 6–10), then add the
+   smallest load jump and reset to the bottom of the window. This is **progressive
+   overload** under the **SAID principle** (Specific Adaptation to Imposed Demands):
+   gradually increasing mechanical demand drives adaptation, one of the most consistently
+   replicated findings in resistance-training research. This is the primary driver because
+   it's the best-supported.
+
+2. **Plateau → deload** — if estimated 1RM is flat or declining across the last few
+   sessions (default 3) and rule 1 isn't already calling for more load, suggest cutting
+   volume (~half the sets) for a session or two rather than the load. This is loosely
+   motivated by the **fitness–fatigue model** (Bannister, 1975), but note the trigger here
+   is a crude e1RM-trend heuristic, **not** a fitted two-factor model — without soreness,
+   HRV, or sleep data we can't do better, and shouldn't pretend to.
+
+3. **RPE autoregulation** — *only if* Strong's RPE column is populated. If effort is
+   trending up at the same load and reps, bias toward holding instead of progressing
+   (RPE/RIR-based autoregulation; Zourdos et al., 2016; Helms et al., 2016). Evidence
+   doesn't clearly rank RPE-based loading above percentage- or velocity-based approaches,
+   so it's treated as a mild adjustment, not a primary driver — and it's a complete no-op
+   when the export has no RPE (as most Strong exports don't).
+
+4. **No generic weekly-volume landmarks.** The familiar "~10–20 sets per muscle per week"
+   figures come from dose–response meta-analyses that pool *every* exercise hitting a muscle
+   group (e.g. Schoenfeld, Ogborn & Krieger, 2017). This dashboard tracks a single exercise
+   per lift, so raw "sets/week for this lift" isn't comparable to those numbers; weekly set
+   counts are context only and never gate a suggestion.
+
+5. **No hardcoded periodization model or Prilepin table.** Head-to-head comparisons of
+   linear vs. undulating periodization return inconsistent, frequently null differences,
+   and Prilepin's table is *observational* — distilled from watching successful lifters, not
+   an experiment. Both are fine as optional reference (the RM tables above are exactly that)
+   but are deliberately not wired into the engine as if they were settled law.
+
 ## Updating your data
 
 ### Automatic sync via iCloud Drive (recommended, macOS)
@@ -156,8 +199,9 @@ GitHub Actions rebuilds and redeploys the site automatically (see
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm run build    # production build into dist/
+npm run build    # production build into dist/ (also the type-check gate)
 npm run preview  # preview the production build
+npm run test     # Vitest unit tests (suggestion logic)
 ```
 
 ## Project structure
@@ -168,8 +212,9 @@ src/
   App.tsx                    imports the CSV, parses it once, renders <Dashboard>
   lib/
     types.ts                 the four LIFTS (BP/SQ/DL/OHP) + row/session types
-    parse.ts                 CSV → typed SetRow[] (Epley e1RM, warmup flag)
-    metrics.ts               e1RM / max-weight series, PRs, Big-4 total, volume, frequency
+    parse.ts                 CSV → typed SetRow[] (Epley e1RM, warmup flag, optional RPE)
+    metrics.ts               e1RM / max-weight series, PRs, Big-4, volume, frequency, suggestions
+    metrics.suggestion.test.ts  Vitest coverage of the next-session branching
     format.ts                date / kg / tonnage display helpers
     theme.ts                 the selectable UI themes (dark / light / cozy)
     mode.ts                  metric mode (est. 1RM vs. actual max weight)
@@ -180,6 +225,7 @@ src/
     Dashboard.tsx            page layout, composes everything
     StatCards.tsx            Big-4 total + per-lift PR cards
     LatestWorkout.tsx        most recent session in full (always expanded)
+    NextSession.tsx          per-lift load × reps suggestion from history
     ProgressChart.tsx        headline chart; toggles est. 1RM ⇄ max weight
     VolumeChart.tsx          weekly stacked tonnage bars
     FrequencyHeatmap.tsx     calendar heatmap (plain divs, not Recharts)

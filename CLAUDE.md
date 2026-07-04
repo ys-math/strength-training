@@ -16,9 +16,13 @@ npm install
 npm run dev      # dev server at http://localhost:5173/strength-training/
 npm run build    # tsc -b && vite build → dist/  (run this to type-check)
 npm run preview  # serve the production build at :4173
+npm run test     # vitest run — unit tests for the suggestion logic
 ```
 
-There is no separate test/lint script — `npm run build` is the type-check gate.
+`npm run build` is the type-check gate. There is no lint script. The only unit tests are
+Vitest coverage of `nextSessionSuggestion` (`src/lib/metrics.suggestion.test.ts`); the rest
+of the pipeline is verified by build + manual/headless checks. Test files live under `src`,
+so `tsc -b` type-checks them too, but they're never bundled (nothing imports them).
 
 ## Architecture & data flow
 
@@ -43,7 +47,9 @@ strong_workouts.csv ?raw
   `liftPR`, `e1rmSeries` (per-session best e1RM), `maxWeightSeries` (per-session heaviest
   set + its reps/set-count, for the max-weight chart), `cumulativeSeries(rows, mode)` and
   `big4Series(rows, mode)` (each lift's / the summed best-to-date value, only climbs),
-  `currentPrev`, `weeklyVolume` (ISO week), `dailyActivity`, `sessionDetails`, `overallStats`.
+  `currentPrev`, `weeklyVolume` (ISO week), `dailyActivity`, `sessionDetails`, `overallStats`,
+  and `nextSessionSuggestion` (per-lift load × reps heuristic — config in
+  `DEFAULT_SUGGESTION_CONFIG`, theory documented in README's "How suggestions work").
 - **`src/components/`** — presentational; each takes `rows: SetRow[]` and derives via
   `useMemo`. `Dashboard.tsx` composes them.
 

@@ -31,6 +31,7 @@ export interface SetRow {
   weight: number // kg
   reps: number
   e1rm: number // estimated 1-rep max for this set (Epley)
+  rpe: number | null // Strong's optional RPE column; null when the export omits it
 }
 
 // One lift performed on one date (all its sets aggregated).
