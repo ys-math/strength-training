@@ -72,23 +72,26 @@ drawn to a synthetic future date; tooltips ignore any `__p` dataKey.
 the `prev` top set, target `load/reps/sets`, per-field deltas, and the projections. `NextSession`
 and `LatestWorkout` share the `SetChip` / `groupSets` pill from `components/SetChip.tsx`.
 
-### Goals & roadmap
+### Goals (drawn on the chart)
 
-Per-lift **max-weight** targets at 3/6/12-month horizons, **recommendation-only** (no editing, no
-persistence). The roadmap is anchored to **fixed calendar quarters**: `quarterCheckpoints` in
-`src/lib/goals.ts` returns the four upcoming quarters (for the timeline strip) and the short/mid/long
-due-dates (1st/2nd/4th quarter-ends); `goals.ts` also holds `HORIZONS` and `weeksUntil`. `metrics.ts`
-provides `recommendedGoals` — **history-driven, bounded by diminishing returns**: it projects
-`recentRatePerWeek` forward a quarter at a time with per-period **decay** (mid ×0.7, long ×0.5), then
-**clamps** the cumulative gain between a %-of-current floor and a decelerating %-of-current cap
-(8/15/25 %, so a hot streak can't project to absurd numbers), snapped to 2.5 kg and forced strictly
-increasing (`DEFAULT_GOAL_CONFIG`) — plus `recentRatePerWeek` and `goalPace`. `nextSessionSuggestion(rows, goalCtx?, config?)` is **goal-aware**: with a short-term
-`GoalContext` (built from the recommended short target) it fills `Suggestion.goalPace`/`requiredPerWeek`
-and, when *behind* pace and only mildly stalled, pushes a rep instead of a soft deload (hard
-deloads/load-jumps unchanged). `Dashboard` computes the goal-aware `suggestions` **once** and passes
-them as a prop to both `NextSession` and `ProgressChart` (so the card and the chart projection agree).
-`Roadmap.tsx` (`{ rows }` only) renders the quarter timeline + per-lift current-vs-target bars with
-pace chips. Reasoning/evidence live in README's "How goals work".
+Per-lift **max-weight** targets, **recommendation-only** (no editing, no persistence). The **3-month**
+target is drawn on `ProgressChart` as a dashed horizontal `ReferenceLine` per visible lift, gated by a
+**Goals switch** (local `showGoals` state) and shown **only in max-weight mode** (`goalsOn = mode ===
+'maxWeight' && showGoals`) since goals are a max-weight quantity. Its due-date is the next fixed
+calendar quarter-end from `quarterCheckpoints` in `src/lib/goals.ts` (which also holds `HORIZONS` and
+`weeksUntil`). `metrics.ts` provides `recommendedGoals` — **history-driven, bounded by diminishing
+returns**: it projects `recentRatePerWeek` forward a quarter at a time with per-period **decay** (mid
+×0.7, long ×0.5), then **clamps** the cumulative gain between a %-of-current floor and a decelerating
+%-of-current cap (8/15/25 %, so a hot streak can't project to absurd numbers), snapped to 2.5 kg and
+forced strictly increasing (`DEFAULT_GOAL_CONFIG`); `.short` feeds the chart lines and the
+goal-aware suggestion, `.mid`/`.long` keep the curve honest. `nextSessionSuggestion(rows, goalCtx?,
+config?)` is **goal-aware**: with a short-term `GoalContext` (built from the recommended short target
+in `Dashboard`) it fills `Suggestion.goalPace`/`requiredPerWeek` and, when *behind* pace and only
+mildly stalled, pushes a rep instead of a soft deload (hard deloads/load-jumps unchanged). `Dashboard`
+computes the goal-aware `suggestions` **once** and passes them to both `NextSession` (pace chip) and
+`ProgressChart` (dotted next-session projection). `ProgressChart` also owns a **span slider** (local
+`startIdx`) that slices the visible date range; index-keyed end-labels/dots are offset by the slice
+start. Reasoning/evidence live in README's "How goals work".
 
 ### Theming
 

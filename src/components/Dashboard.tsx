@@ -7,7 +7,6 @@ import { useMetricMode } from '../hooks/useMetricMode'
 import StatCards from './StatCards'
 import LatestWorkout from './LatestWorkout'
 import NextSession from './NextSession'
-import Roadmap from './Roadmap'
 import ProgressChart from './ProgressChart'
 import VolumeChart from './VolumeChart'
 import FrequencyHeatmap from './FrequencyHeatmap'
@@ -61,7 +60,6 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
           <LatestWorkout rows={rows} />
           <NextSession rows={rows} suggestions={suggestions} />
         </div>
-        <Roadmap rows={rows} />
         <ProgressChart rows={rows} mode={mode} suggestions={suggestions} />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <VolumeChart rows={rows} />

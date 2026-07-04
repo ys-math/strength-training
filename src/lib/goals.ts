@@ -1,6 +1,6 @@
 // Per-lift max-weight (actual heaviest single) targets at three horizons. Goals are
-// recommendation-only (no editing, no persistence): the roadmap divides the year into
-// fixed calendar quarters and shows where you stand against the recommended targets.
+// recommendation-only (no editing, no persistence): the year is divided into fixed
+// calendar quarters, and the short-term (next quarter-end) target is drawn on the chart.
 export type GoalHorizon = 'short' | 'mid' | 'long'
 
 export const HORIZONS: { id: GoalHorizon; label: string; short: string; months: number }[] = [
@@ -35,7 +35,7 @@ function quarterFromEnd(end: Date): Quarter {
   return { label: `${MONTHS[startMonth]}–${MONTHS[endMonth]}`, start, end }
 }
 
-// The roadmap is anchored to fixed calendar quarters (Jan–Mar / Apr–Jun / Jul–Sep /
+// Goals are anchored to fixed calendar quarters (Jan–Mar / Apr–Jun / Jul–Sep /
 // Oct–Dec). `quarters` are the four upcoming quarters (the current one first); the goal
 // horizons fall on fixed quarter-ends: short = 1st (≤3 mo), mid = 2nd (≤6 mo),
 // long = 4th (≤12 mo).

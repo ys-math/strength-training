@@ -3,6 +3,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   type TooltipProps,
@@ -10,8 +11,15 @@ import {
   YAxis,
 } from 'recharts'
 import { LIFT_BY_KEY, LIFTS, type LiftKey } from '../lib/types'
-import { e1rmSeries, maxWeightSeries, type MaxWeightPoint, type Suggestion } from '../lib/metrics'
-import { fmtDate, fmtLongDate } from '../lib/format'
+import {
+  e1rmSeries,
+  maxWeightSeries,
+  recommendedGoals,
+  type MaxWeightPoint,
+  type Suggestion,
+} from '../lib/metrics'
+import { quarterCheckpoints } from '../lib/goals'
+import { fmtDate, fmtLongDate, fmtPlate } from '../lib/format'
 import type { SetRow } from '../lib/types'
 import type { MetricMode } from '../lib/mode'
 import ChartCard from './ChartCard'
@@ -164,6 +172,17 @@ export default function ProgressChart({
     [rows, mode],
   )
   const [hidden, setHidden] = useState<Set<LiftKey>>(new Set())
+  const [showGoals, setShowGoals] = useState(true)
+  const [startIdx, setStartIdx] = useState(0)
+
+  // Short-term (next fixed calendar quarter) recommended max-weight goal per lift, and
+  // its due date — drawn as horizontal target lines in max-weight mode.
+  const goals = useMemo(
+    () => Object.fromEntries(LIFTS.map((l) => [l.key, recommendedGoals(rows, l.key).short])) as Record<LiftKey, number>,
+    [rows],
+  )
+  const goalDate = useMemo(() => quarterCheckpoints().horizonDate.short, [])
+  const goalsOn = mode === 'maxWeight' && showGoals
 
   const lastIndex = useMemo(() => {
     const map: Record<string, number> = {}
@@ -242,6 +261,16 @@ export default function ProgressChart({
 
   const labelOffsets = useMemo(() => labelOffsetsFor(rightMost), [rightMost])
 
+  // Span slider: `start` clamps the history-depth handle; `shown` is the visible slice
+  // (right edge pinned to the latest point / projection). Index-keyed labels & dots are
+  // offset by `start` so they still land on the right rows after slicing.
+  const maxStart = Math.max(0, chartData.length - 2)
+  const start = Math.min(startIdx, maxStart)
+  const shown = start > 0 ? chartData.slice(start) : chartData
+  const canSlide = data.length >= 3
+  const windowStart = shown.length ? fmtLongDate(String((shown[0] as { dateKey: string }).dateKey)) : ''
+  const windowEnd = data.length ? fmtLongDate(data[data.length - 1].dateKey) : ''
+
   const toggle = (k: LiftKey) =>
     setHidden((prev) => {
       const next = new Set(prev)
@@ -274,6 +303,35 @@ export default function ProgressChart({
     </div>
   )
 
+  const goalSwitch = (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={showGoals}
+      onClick={() => setShowGoals((v) => !v)}
+      className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors"
+      style={{ border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+    >
+      <span
+        className="relative inline-block h-3.5 w-6 rounded-full transition-colors"
+        style={{ background: showGoals ? 'var(--lift-bp)' : 'var(--surface-2)' }}
+      >
+        <span
+          className="absolute top-0.5 h-2.5 w-2.5 rounded-full transition-all"
+          style={{ background: '#fff', left: showGoals ? '12px' : '2px' }}
+        />
+      </span>
+      Goals
+    </button>
+  )
+
+  const controls = (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {legend}
+      {mode === 'maxWeight' && goalSwitch}
+    </div>
+  )
+
   const title = mode === 'e1rm' ? 'Estimated 1RM over time' : 'Max weight lifted'
   const subtitle =
     mode === 'e1rm'
@@ -282,10 +340,10 @@ export default function ProgressChart({
   const lineType = 'monotone'
 
   return (
-    <ChartCard title={title} subtitle={subtitle} right={legend}>
+    <ChartCard title={title} subtitle={subtitle} right={controls}>
       <div style={{ width: '100%', height: 340 }}>
         <ResponsiveContainer>
-          <LineChart data={chartData} margin={{ top: 8, right: 56, bottom: 4, left: 4 }}>
+          <LineChart data={shown} margin={{ top: 8, right: 56, bottom: 4, left: 4 }}>
             <CartesianGrid stroke="var(--gridline)" vertical={false} />
             <XAxis
               dataKey="dateKey"
@@ -301,6 +359,27 @@ export default function ProgressChart({
               tickFormatter={(v: number) => `${v}`}
             />
             <Tooltip content={<ProgressTooltip mode={mode} suggestions={suggestions} />} />
+            {goalsOn &&
+              LIFTS.map((lift, i) =>
+                hidden.has(lift.key) || !(goals[lift.key] > 0) ? null : (
+                  <ReferenceLine
+                    key={`${lift.key}__goal`}
+                    y={goals[lift.key]}
+                    stroke={lift.color}
+                    strokeDasharray="4 4"
+                    strokeOpacity={0.7}
+                    ifOverflow="extendDomain"
+                    label={{
+                      value: `${lift.key} ${fmtPlate(goals[lift.key])}`,
+                      // Alternate sides so lifts sharing a goal value don't overprint.
+                      position: i % 2 === 0 ? 'insideLeft' : 'insideRight',
+                      fill: lift.color,
+                      fontSize: 10,
+                      fontWeight: 700,
+                    }}
+                  />
+                ),
+              )}
             {LIFTS.map((lift) =>
               hidden.has(lift.key) ? null : (
                 <Line
@@ -319,7 +398,7 @@ export default function ProgressChart({
                     // their last real point; projecting lifts label the dashed tip instead.
                     projected && projValue(lift.key) != null
                       ? undefined
-                      : (makeEndLabel(lastIndex[lift.key], lift.color, lift.key, labelOffsets[lift.key] ?? 0) as never)
+                      : (makeEndLabel(lastIndex[lift.key] - start, lift.color, lift.key, labelOffsets[lift.key] ?? 0) as never)
                   }
                 />
               ),
@@ -334,21 +413,49 @@ export default function ProgressChart({
                     stroke={lift.color}
                     strokeWidth={2}
                     strokeDasharray="5 4"
-                    dot={makeProjDot(projIndex, lift.color) as never}
+                    dot={makeProjDot(projIndex - start, lift.color) as never}
                     activeDot={false}
                     connectNulls
                     isAnimationActive={false}
                     legendType="none"
-                    label={makeEndLabel(projIndex, lift.color, lift.key, labelOffsets[lift.key] ?? 0) as never}
+                    label={makeEndLabel(projIndex - start, lift.color, lift.key, labelOffsets[lift.key] ?? 0) as never}
                   />
                 ),
               )}
           </LineChart>
         </ResponsiveContainer>
       </div>
-      {projected && (
+
+      {canSlide && (
+        <div className="mt-3 flex items-center gap-3">
+          <span className="shrink-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            Span
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={maxStart}
+            value={start}
+            onChange={(e) => setStartIdx(Number(e.target.value))}
+            aria-label="Show from"
+            className="h-1 flex-1 cursor-pointer appearance-none rounded-full"
+            style={{ accentColor: 'var(--lift-bp)', background: 'var(--surface-2)' }}
+          />
+          <span className="shrink-0 text-right text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
+            {windowStart} – {windowEnd}
+          </span>
+        </div>
+      )}
+
+      {(projected || goalsOn) && (
         <p className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-          Dotted = projected next session if you hit the suggested goal (see Next session).
+          {projected && 'Dotted = projected next session if you hit the suggested goal (see Next session). '}
+          {goalsOn &&
+            `Dashed horizontal = 3-month goal (by ${goalDate.toLocaleDateString(undefined, {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+            })}, this fixed quarter).`}
         </p>
       )}
     </ChartCard>

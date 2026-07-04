@@ -15,14 +15,15 @@ CSV export. Modern dark UI, deployed free on GitHub Pages.
 - **Big 4 total** — combined est. 1RM (or max weight) across the four lifts, one climbing number.
 - **Progress over time** — per-lift headline chart of the best set each session (Epley e1RM,
   or actual heaviest weight — hover a point for its reps and set count). A dotted line extends
-  each lift to where it would land next session if you hit the suggested goal.
+  each lift to where it would land next session if you hit the suggested goal, and a **span
+  slider** below the chart zooms the visible date range.
+- **Goal lines** — in max-weight mode, a switch overlays each lift’s **3-month goal** (the
+  recommended target for the current fixed calendar quarter) as a dashed horizontal line on the
+  chart (see [How goals work](#how-goals-work)).
 - **PR cards** — the PR in the active metric and a from-previous-PR delta.
 - **Latest workout** — the most recent session in full: every exercise, set, and volume, as chips.
 - **Next session** — a suggested load × reps per lift, shown as `previous → target` chips with the
   change highlighted, plus a goal-pace chip (see [How suggestions work](#how-suggestions-work)).
-- **Goals & roadmap** — recommended per-lift max-weight targets at 3 / 6 / 12 months, laid out on
-  the year’s fixed calendar quarters with a “now” marker, progress bars, and pace indicators (see
-  [How goals work](#how-goals-work)).
 - **Weekly volume** — working tonnage (weight × reps), warmup sets excluded.
 - **Training frequency** — GitHub-style calendar heatmap of working sets per day.
 - **Per-lift detail** — est. 1RM vs. heaviest set for any single lift.
@@ -160,15 +161,18 @@ carries `projectedWeight` / `projectedE1rm` for this); a deload projects nothing
 
 ## How goals work
 
-The **Goals & roadmap** card shows a per-lift **max-weight** (actual heaviest single)
-**recommended** target for three horizons — short (3 mo), mid (6 mo), long (1 yr). Targets are
-computed from your history; there is nothing to edit and nothing is stored.
+The dashboard computes a per-lift **max-weight** (actual heaviest single) **recommended** target
+and draws the **3-month one** on the progress chart. Targets are computed from your history; there
+is nothing to edit and nothing is stored.
 
-- **Fixed calendar quarters.** The roadmap divides the year into the standard calendar quarters
-  (Jan–Mar / Apr–Jun / Jul–Sep / Oct–Dec) with a **“now” marker**, so the checkpoints are stable
-  dates rather than a window that slides with today. The horizons fall on fixed quarter-ends:
-  short = the next one (≤ 3 mo), mid = the one after (≤ 6 mo), long = the fourth (≤ 12 mo).
-  `quarterCheckpoints` (in `goals.ts`) returns the four upcoming quarters and those due-dates.
+- **On the chart.** In max-weight mode, a **Goals switch** in the chart header overlays each lift’s
+  **short-term (3-month) target** as a dashed horizontal line in the lift’s colour, labelled with
+  the target kg. (Est-1RM mode hides it — goals are a max-weight quantity.) The span slider below
+  the chart lets you zoom the visible date range independently.
+- **Fixed calendar quarters.** The 3-month target is due at the next standard calendar quarter-end
+  (Mar 31 / Jun 30 / Sep 30 / Dec 31) — a stable date, not a window that slides with today.
+  `quarterCheckpoints` (in `goals.ts`) returns the upcoming quarter due-dates; `recommendedGoals`
+  also computes 6-month and 1-year targets, used to keep the recommendation curve honest.
 - **Recommended targets** (`recommendedGoals` in `metrics.ts`, config in `DEFAULT_GOAL_CONFIG`)
   are **history-driven but bounded by diminishing returns**: they project your **recent**
   best-to-date max-weight rate (`recentRatePerWeek`, ~8-week window) forward a quarter at a time,
@@ -177,9 +181,9 @@ computed from your history; there is nothing to edit and nothing is stored.
   %-of-current **ceiling that itself decelerates** — ≈ 8 % in one quarter, 15 % over two, 25 % over
   a year — so a hot 8-week streak can’t project to an absurd number. Results are snapped to 2.5 kg
   and forced strictly increasing. Treat them as a **rough guide, not a promise**.
-- **Where you stand.** For each horizon a bar fills your current max toward the target, and a
-  **pace** chip (`goalPace`) compares the rate still required, `(target − current) / weeks_left`
-  to that quarter-end, against your recent rate → `ahead` / `on track` / `behind` / `met`.
+- **Where you stand.** The **Next session** card carries a **pace** chip (`goalPace`) that compares
+  the rate still required to hit the 3-month target, `(target − current) / weeks_left` to the
+  quarter-end, against your recent rate → `ahead` / `on track` / `behind` / `met`.
 - **Goal-aware next session:** the suggestion engine (targeting the recommended short-term goal)
   adds `goalPace` and one
   *bounded* behavioral tweak — if you're **behind** pace and only *mildly* stalled (still in the
@@ -263,9 +267,9 @@ src/
     StatCards.tsx            Big-4 total + per-lift PR cards
     LatestWorkout.tsx        most recent session in full (always expanded)
     NextSession.tsx          per-lift load × reps suggestion (prev → target chips) + pace chip
-    Roadmap.tsx              recommended 3/6/12-month targets on a calendar-quarter timeline + pace
     SetChip.tsx              shared "weight kg × reps ×count" pill + groupSets
-    ProgressChart.tsx        headline chart (+ dotted goal projection); est. 1RM ⇄ max weight
+    ProgressChart.tsx        headline chart: dotted next-session projection, 3-mo goal lines (toggle),
+                             span slider; est. 1RM ⇄ max weight
     VolumeChart.tsx          weekly stacked tonnage bars
     FrequencyHeatmap.tsx     calendar heatmap (plain divs, not Recharts)
     LiftDetail.tsx           per-lift est. 1RM vs. heaviest set
