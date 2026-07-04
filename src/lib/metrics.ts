@@ -1,6 +1,6 @@
 import { LIFTS, LIFT_BY_KEY, type LiftKey, type LiftPR, type LiftSession, type SetRow } from './types'
 import type { MetricMode } from './mode'
-import { fmtPlate } from './format'
+import { epley } from './parse'
 
 export const round1 = (n: number) => Math.round(n * 10) / 10
 export const round0 = (n: number) => Math.round(n)
@@ -419,14 +419,25 @@ export const DEFAULT_SUGGESTION_CONFIG: SuggestionConfig = {
 
 export type SuggestionAction = 'increase-load' | 'add-rep' | 'build-reps' | 'deload' | 'insufficient-data'
 
+export interface TopSetSummary {
+  load: number
+  reps: number
+  sets: number
+}
+
 export interface Suggestion {
   lift: LiftKey
   action: SuggestionAction
-  load: number // suggested working load, kg (0 when there's no history)
-  reps: number // suggested / target reps
-  sets: number // suggested set count
-  loadDelta: number // kg added vs. last session (0 unless increasing load)
-  headline: string // e.g. "4 × 6 @ 102.5kg (+2.5kg)"
+  // Target prescription for the next session (0s when there's no history).
+  load: number
+  reps: number
+  sets: number
+  prev: TopSetSummary | null // last session's top working set
+  loadDelta: number // target − prev, kg (0 when prev is null)
+  repsDelta: number // target − prev reps
+  setsDelta: number // target − prev sets
+  projectedWeight: number | null // target.load if the goal advances the trend, else null
+  projectedE1rm: number | null // epley(target.load, target.reps) if it advances, else null
   rationale: string // one-line explanation
 }
 
@@ -514,18 +525,43 @@ function rpeRisingAtConstant(tops: TopSet[]): boolean {
 
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s)
 
-function deloadSuggestion(lift: LiftKey, last: TopSet, config: SuggestionConfig, why: string): Suggestion {
-  const sets = Math.max(1, Math.round(last.sets * config.deloadSetFactor))
+// Assemble a Suggestion from a target prescription: fills deltas vs. `prev` and,
+// when the goal advances the trend, the projected next-session weight & e1RM.
+function buildSuggestion(
+  lift: LiftKey,
+  action: SuggestionAction,
+  target: TopSetSummary,
+  prev: TopSetSummary | null,
+  rationale: string,
+  advances: boolean,
+): Suggestion {
   return {
     lift,
-    action: 'deload',
-    load: last.load,
-    reps: last.reps,
-    sets,
-    loadDelta: 0,
-    headline: `deload — ${sets} × ${last.reps} @ ${fmtPlate(last.load)}kg (~half volume)`,
-    rationale: `${cap(why)}; ease off for a session or two. Heuristic (e1RM trend), not a fatigue model.`,
+    action,
+    load: target.load,
+    reps: target.reps,
+    sets: target.sets,
+    prev,
+    loadDelta: prev ? round1(target.load - prev.load) : 0,
+    repsDelta: prev ? target.reps - prev.reps : 0,
+    setsDelta: prev ? target.sets - prev.sets : 0,
+    projectedWeight: advances ? target.load : null,
+    projectedE1rm: advances ? round1(epley(target.load, target.reps)) : null,
+    rationale,
   }
+}
+
+function deloadSuggestion(lift: LiftKey, last: TopSet, config: SuggestionConfig, why: string): Suggestion {
+  const sets = Math.max(1, Math.round(last.sets * config.deloadSetFactor))
+  const prev: TopSetSummary = { load: last.load, reps: last.reps, sets: last.sets }
+  return buildSuggestion(
+    lift,
+    'deload',
+    { load: last.load, reps: last.reps, sets },
+    prev,
+    `${cap(why)}; ease off for a session or two. Heuristic (e1RM trend), not a fatigue model.`,
+    false,
+  )
 }
 
 function suggestForLift(
@@ -543,13 +579,18 @@ function suggestForLift(
       load: 0,
       reps: 0,
       sets: 0,
+      prev: null,
       loadDelta: 0,
-      headline: 'no working sets logged yet',
+      repsDelta: 0,
+      setsDelta: 0,
+      projectedWeight: null,
+      projectedE1rm: null,
       rationale: `No ${label} history in the data yet.`,
     }
   }
 
   const last = tops[tops.length - 1]
+  const prev: TopSetSummary = { load: last.load, reps: last.reps, sets: last.sets }
   const [lo, hi] = config.repRangeByLift[lift] ?? config.repRange
   const inc = config.loadIncrement
   const sets = Math.max(1, last.sets)
@@ -559,28 +600,23 @@ function suggestForLift(
   if (last.reps >= hi) {
     // 3. RPE (only if tracked): rising effort at the same load/reps → hold.
     if (rpeAvailable && rpeRisingAtConstant(tops)) {
-      return {
+      return buildSuggestion(
         lift,
-        action: 'add-rep',
-        load: last.load,
-        reps: last.reps,
-        sets,
-        loadDelta: 0,
-        headline: `hold ${sets} × ${last.reps} @ ${fmtPlate(last.load)}kg (RPE climbing)`,
-        rationale: `Hit the top of the ${lo}–${hi} range, but RPE is rising at the same load — hold before adding weight.`,
-      }
+        'add-rep',
+        { load: last.load, reps: last.reps, sets },
+        prev,
+        `Hit the top of the ${lo}–${hi} range, but RPE is rising at the same load — hold before adding weight.`,
+        false,
+      )
     }
-    const load = last.load + inc
-    return {
+    return buildSuggestion(
       lift,
-      action: 'increase-load',
-      load,
-      reps: lo,
-      sets,
-      loadDelta: inc,
-      headline: `${sets} × ${lo} @ ${fmtPlate(load)}kg (+${fmtPlate(inc)}kg)`,
-      rationale: `Hit ${sets}×${last.reps} @ ${fmtPlate(last.load)}kg last session (top of ${lo}–${hi} range).`,
-    }
+      'increase-load',
+      { load: last.load + inc, reps: lo, sets },
+      prev,
+      `Hit ${sets}×${last.reps} @ ${last.load}kg last session (top of ${lo}–${hi} range).`,
+      true,
+    )
   }
 
   if (last.reps >= lo) {
@@ -588,16 +624,14 @@ function suggestForLift(
     if (stagnant) {
       return deloadSuggestion(lift, last, config, `est. 1RM flat over the last ${config.stagnationWindow} sessions`)
     }
-    return {
+    return buildSuggestion(
       lift,
-      action: 'add-rep',
-      load: last.load,
-      reps: last.reps,
-      sets,
-      loadDelta: 0,
-      headline: `hold ${sets} × ${last.reps} @ ${fmtPlate(last.load)}kg, aim for +1 rep`,
-      rationale: `Reps within the ${lo}–${hi} range but not at the top yet.`,
-    }
+      'add-rep',
+      { load: last.load, reps: last.reps + 1, sets },
+      prev,
+      `Reps within the ${lo}–${hi} range but not at the top yet.`,
+      true,
+    )
   }
 
   // Below range: hold and build reps, unless it's dragging on (2. deload).
@@ -608,16 +642,14 @@ function suggestForLift(
       : `est. 1RM flat over the last ${config.stagnationWindow} sessions`
     return deloadSuggestion(lift, last, config, why)
   }
-  return {
+  return buildSuggestion(
     lift,
-    action: 'build-reps',
-    load: last.load,
-    reps: lo,
-    sets,
-    loadDelta: 0,
-    headline: `hold ${sets} × ${last.reps} @ ${fmtPlate(last.load)}kg, build toward ${lo} reps`,
-    rationale: `Below the ${lo}–${hi} range — rebuild reps at this load before adding weight.`,
-  }
+    'build-reps',
+    { load: last.load, reps: last.reps + 1, sets },
+    prev,
+    `Below the ${lo}–${hi} range — rebuild reps at this load before adding weight.`,
+    true,
+  )
 }
 
 // Per-lift next-session suggestion, computed purely from set history.

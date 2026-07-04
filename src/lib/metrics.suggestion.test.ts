@@ -43,30 +43,35 @@ describe('nextSessionSuggestion — double progression', () => {
     expect(s.reps).toBe(6) // dropped to bottom of the 6–10 range
     expect(s.sets).toBe(3)
     expect(s.loadDelta).toBe(2.5)
-    expect(s.headline).toBe('3 × 6 @ 62.5kg (+2.5kg)')
+    expect(s.prev).toEqual({ load: 60, reps: 10, sets: 3 })
+    expect(s.projectedWeight).toBe(62.5)
+    expect(s.projectedE1rm).toBe(epley(62.5, 6)) // 75
   })
 
-  it('holds load and asks for +1 rep when reps are within range but not at the top', () => {
+  it('holds load and adds a rep when reps are within range but not at the top', () => {
     const rows = session('2026-01-01', 'BP', 60, 8, 3)
     const s = nextSessionSuggestion(rows).BP
     expect(s.action).toBe('add-rep')
     expect(s.load).toBe(60)
-    expect(s.reps).toBe(8)
-    expect(s.headline).toBe('hold 3 × 8 @ 60kg, aim for +1 rep')
+    expect(s.reps).toBe(9) // target = previous + 1
+    expect(s.repsDelta).toBe(1)
+    expect(s.loadDelta).toBe(0)
+    expect(s.projectedE1rm).toBe(epley(60, 9)) // 78
   })
 
-  it('holds and builds reps when below the range (single session, no plateau)', () => {
+  it('builds reps when below the range (single session, no plateau)', () => {
     const rows = session('2026-01-01', 'BP', 60, 4, 3)
     const s = nextSessionSuggestion(rows).BP
     expect(s.action).toBe('build-reps')
     expect(s.load).toBe(60)
-    expect(s.headline).toContain('build toward 6 reps')
+    expect(s.reps).toBe(5)
+    expect(s.repsDelta).toBe(1)
   })
 
   it('ignores warmup sets when picking the top working set', () => {
     const rows = [set('2026-01-01', 'BP', 100, 1, { warmup: true }), ...session('2026-01-01', 'BP', 60, 8, 3)]
     const s = nextSessionSuggestion(rows).BP
-    expect(s.headline).toContain('@ 60kg') // not the 100kg warmup
+    expect(s.load).toBe(60) // not the 100kg warmup
   })
 })
 
@@ -76,6 +81,8 @@ describe('nextSessionSuggestion — plateau / deload', () => {
     const s = nextSessionSuggestion(rows).BP
     expect(s.action).toBe('deload')
     expect(s.sets).toBe(2) // ~half of 3, rounded
+    expect(s.setsDelta).toBeLessThan(0)
+    expect(s.projectedWeight).toBeNull() // a deload isn't a trend-advancing goal
     expect(s.rationale).toMatch(/heuristic/i)
   })
 
@@ -87,6 +94,7 @@ describe('nextSessionSuggestion — plateau / deload', () => {
     ]
     const s = nextSessionSuggestion(rows).BP
     expect(s.action).toBe('deload')
+    expect(s.projectedWeight).toBeNull()
     expect(s.rationale).toMatch(/flat/i)
   })
 })
@@ -99,7 +107,7 @@ describe('nextSessionSuggestion — RPE autoregulation', () => {
     expect(s.action).toBe('increase-load')
   })
 
-  it('holds instead of adding load when RPE rises at the same load/reps', () => {
+  it('holds (no rep gain, no projection) when RPE rises at the same load/reps', () => {
     const rows = [
       ...session('2026-01-01', 'BP', 60, 10, 3, 7),
       ...session('2026-01-03', 'BP', 60, 10, 3, 9),
@@ -107,7 +115,8 @@ describe('nextSessionSuggestion — RPE autoregulation', () => {
     expect(hasRpeData(rows)).toBe(true)
     const s = nextSessionSuggestion(rows).BP
     expect(s.action).toBe('add-rep')
-    expect(s.headline).toMatch(/RPE/i)
+    expect(s.repsDelta).toBe(0)
+    expect(s.projectedWeight).toBeNull()
   })
 })
 
@@ -116,7 +125,8 @@ describe('nextSessionSuggestion — coverage & edges', () => {
     const rows = session('2026-01-01', 'BP', 60, 8, 3)
     const s = nextSessionSuggestion(rows).SQ
     expect(s.action).toBe('insufficient-data')
-    expect(s.headline).toBe('no working sets logged yet')
+    expect(s.prev).toBeNull()
+    expect(s.projectedWeight).toBeNull()
   })
 
   it('returns a suggestion for all four lifts', () => {

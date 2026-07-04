@@ -1,45 +1,9 @@
 import { useMemo } from 'react'
-import { sessionDetails, type SetDetail } from '../lib/metrics'
+import { sessionDetails } from '../lib/metrics'
 import { fmtLongDate, fmtTonnage } from '../lib/format'
 import { LIFT_BY_KEY, type SetRow } from '../lib/types'
 import ChartCard from './ChartCard'
-
-interface SetGroup {
-  weight: number
-  reps: number
-  count: number
-}
-
-// Collapse consecutive identical sets into one "weight × reps ×count" chip, so a
-// run of three matching working sets reads as one pill instead of three.
-function groupSets(sets: SetDetail[]): SetGroup[] {
-  const groups: SetGroup[] = []
-  for (const s of sets) {
-    const last = groups[groups.length - 1]
-    if (last && last.weight === s.weight && last.reps === s.reps) last.count += 1
-    else groups.push({ weight: s.weight, reps: s.reps, count: 1 })
-  }
-  return groups
-}
-
-function SetChip({ g, warmup }: { g: SetGroup; warmup?: boolean }) {
-  return (
-    <span
-      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] tabular-nums"
-      style={{
-        border: '1px solid var(--border)',
-        background: warmup ? 'transparent' : 'var(--page)',
-        color: warmup ? 'var(--text-muted)' : 'var(--text-secondary)',
-      }}
-    >
-      {warmup && <span className="font-semibold" style={{ color: 'var(--text-muted)' }}>W</span>}
-      <span>
-        {g.weight}<span style={{ color: 'var(--text-muted)' }}> kg × </span>{g.reps}
-      </span>
-      {g.count > 1 && <span style={{ color: 'var(--text-muted)' }}>×{g.count}</span>}
-    </span>
-  )
-}
+import SetChip, { groupSets } from './SetChip'
 
 // The most recent workout, shown in full and always expanded — a quick "what did I
 // just do?" glance, distinct from the collapsible full Session log below.

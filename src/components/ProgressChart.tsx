@@ -10,7 +10,7 @@ import {
   YAxis,
 } from 'recharts'
 import { LIFT_BY_KEY, LIFTS, type LiftKey } from '../lib/types'
-import { e1rmSeries, maxWeightSeries, type MaxWeightPoint } from '../lib/metrics'
+import { e1rmSeries, maxWeightSeries, nextSessionSuggestion, type MaxWeightPoint } from '../lib/metrics'
 import { fmtDate, fmtLongDate } from '../lib/format'
 import type { SetRow } from '../lib/types'
 import type { MetricMode } from '../lib/mode'
@@ -19,9 +19,12 @@ import ChartTooltip from './Tooltip'
 
 // Max-weight mode tooltip: each lift's heaviest set that session as weight × reps,
 // plus its working-set count — the number the generic value tooltip can't carry.
+// Projection series (dataKey ending "__p") are skipped so the dashed continuation
+// doesn't show as a real row.
 function MaxWeightTooltip({ active, payload, label }: TooltipProps<number, string>) {
   if (!active || !payload || payload.length === 0) return null
-  const point = payload[0].payload as MaxWeightPoint
+  const items = payload.filter((p) => p.value != null && !String(p.dataKey).endsWith('__p'))
+  if (items.length === 0) return null
   return (
     <div
       className="rounded-lg px-3 py-2 text-xs shadow-lg"
@@ -30,24 +33,22 @@ function MaxWeightTooltip({ active, payload, label }: TooltipProps<number, strin
       <div className="mb-1 font-medium" style={{ color: 'var(--text-secondary)' }}>
         {fmtLongDate(String(label))}
       </div>
-      {payload
-        .filter((p) => p.value != null)
-        .map((p) => {
-          const key = p.dataKey as LiftKey
-          const d = point.detail[key]
-          return (
-            <div key={key} className="flex items-center gap-2 py-0.5">
-              <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: p.color }} />
-              <span style={{ color: 'var(--text-muted)' }}>{LIFT_BY_KEY.get(key)?.label ?? p.name}</span>
-              <span className="ml-auto tabular-nums font-medium">
-                {p.value} kg{d ? ` × ${d.reps}` : ''}
-                {d && d.sets > 0 && (
-                  <span style={{ color: 'var(--text-muted)' }}> · {d.sets} {d.sets === 1 ? 'set' : 'sets'}</span>
-                )}
-              </span>
-            </div>
-          )
-        })}
+      {items.map((p) => {
+        const key = p.dataKey as LiftKey
+        const d = (p.payload as MaxWeightPoint).detail?.[key]
+        return (
+          <div key={key} className="flex items-center gap-2 py-0.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: p.color }} />
+            <span style={{ color: 'var(--text-muted)' }}>{LIFT_BY_KEY.get(key)?.label ?? p.name}</span>
+            <span className="ml-auto tabular-nums font-medium">
+              {p.value} kg{d ? ` × ${d.reps}` : ''}
+              {d && d.sets > 0 && (
+                <span style={{ color: 'var(--text-muted)' }}> · {d.sets} {d.sets === 1 ? 'set' : 'sets'}</span>
+              )}
+            </span>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -119,6 +120,50 @@ export default function ProgressChart({ rows, mode }: { rows: SetRow[]; mode: Me
     [data, lastIndex],
   )
 
+  const suggestions = useMemo(() => nextSessionSuggestion(rows), [rows])
+
+  // The per-lift projection value in the current metric (null when the goal doesn't
+  // advance the trend — deload / hold / no history).
+  const projValue = (key: LiftKey): number | null => {
+    const s = suggestions[key]
+    return mode === 'e1rm' ? s.projectedE1rm : s.projectedWeight
+  }
+
+  // Chart data with a synthetic future column: each lift's dashed `${key}__p` series
+  // runs from its last real value to the projected next-session value.
+  const { chartData, projected } = useMemo(() => {
+    type Row = Record<string, number | string | boolean | undefined>
+    const base = data as unknown as Row[]
+    if (base.length === 0) return { chartData: base, projected: false }
+
+    const tsList = data.map((d) => d.ts).slice().sort((a, b) => a - b)
+    const diffs: number[] = []
+    for (let i = 1; i < tsList.length; i++) diffs.push(tsList[i] - tsList[i - 1])
+    diffs.sort((a, b) => a - b)
+    const DAY = 86400000
+    const gap = diffs.length ? Math.max(DAY, diffs[Math.floor(diffs.length / 2)]) : 3 * DAY
+    const projTs = tsList[tsList.length - 1] + gap
+    const pd = new Date(projTs)
+    const projKey = `${pd.getFullYear()}-${String(pd.getMonth() + 1).padStart(2, '0')}-${String(pd.getDate()).padStart(2, '0')}`
+
+    const aug = base.map((row) => ({ ...row }))
+    const projRow: Row = { dateKey: projKey, ts: projTs, __projection: true }
+    let any = false
+    for (const lift of LIFTS) {
+      const value = projValue(lift.key)
+      const li = lastIndex[lift.key]
+      if (value == null || li == null) continue
+      const start = (data[li] as unknown as Row)[lift.key]
+      if (start == null) continue
+      aug[li][`${lift.key}__p`] = start as number
+      projRow[`${lift.key}__p`] = value
+      any = true
+    }
+    if (!any) return { chartData: aug, projected: false }
+    aug.push(projRow)
+    return { chartData: aug, projected: true }
+  }, [data, lastIndex, suggestions, mode])
+
   const toggle = (k: LiftKey) =>
     setHidden((prev) => {
       const next = new Set(prev)
@@ -162,7 +207,7 @@ export default function ProgressChart({ rows, mode }: { rows: SetRow[]; mode: Me
     <ChartCard title={title} subtitle={subtitle} right={legend}>
       <div style={{ width: '100%', height: 340 }}>
         <ResponsiveContainer>
-          <LineChart data={data} margin={{ top: 8, right: 44, bottom: 4, left: 4 }}>
+          <LineChart data={chartData} margin={{ top: 8, right: 44, bottom: 4, left: 4 }}>
             <CartesianGrid stroke="var(--gridline)" vertical={false} />
             <XAxis
               dataKey="dateKey"
@@ -203,9 +248,32 @@ export default function ProgressChart({ rows, mode }: { rows: SetRow[]; mode: Me
                 />
               ),
             )}
+            {projected &&
+              LIFTS.map((lift) =>
+                hidden.has(lift.key) || projValue(lift.key) == null ? null : (
+                  <Line
+                    key={`${lift.key}__p`}
+                    type="monotone"
+                    dataKey={`${lift.key}__p`}
+                    stroke={lift.color}
+                    strokeWidth={2}
+                    strokeDasharray="5 4"
+                    dot={{ r: 3, strokeWidth: 0, fill: lift.color }}
+                    activeDot={false}
+                    connectNulls
+                    isAnimationActive={false}
+                    legendType="none"
+                  />
+                ),
+              )}
           </LineChart>
         </ResponsiveContainer>
       </div>
+      {projected && (
+        <p className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          Dotted = projected next session if you hit the suggested goal (see Next session).
+        </p>
+      )}
     </ChartCard>
   )
 }

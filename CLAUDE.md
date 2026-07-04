@@ -64,6 +64,13 @@ control. Mode-aware metrics take `mode` and read the right per-session value via
 *per session* (monotone lines): `e1rm` via `e1rmSeries`, `maxWeight` via `maxWeightSeries`
 (whose points also carry each set's reps and working-set count, shown in a custom tooltip).
 The `StatCards` per-lift "current PR" figure still comes from `cumulativeSeries` (best-to-date).
+`ProgressChart` also appends a dashed `${key}__p` projection series per lift from
+`nextSessionSuggestion` (`projectedE1rm` in e1rm mode, `projectedWeight` in max-weight),
+drawn to a synthetic future date; tooltips ignore any `__p` dataKey.
+
+`Suggestion` (from `nextSessionSuggestion`) is structured, not a headline string: it carries
+the `prev` top set, target `load/reps/sets`, per-field deltas, and the projections. `NextSession`
+and `LatestWorkout` share the `SetChip` / `groupSets` pill from `components/SetChip.tsx`.
 
 ### Theming
 

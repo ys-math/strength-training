@@ -12,6 +12,10 @@ export default function ChartTooltip({
   valueFormatter?: (value: number) => string
 }) {
   if (!active || !payload || payload.length === 0) return null
+  // Projection series (dataKey ending "__p") carry the dashed "if you hit the goal"
+  // continuation; they shouldn't show as real rows in the tooltip.
+  const items = payload.filter((p) => p.value != null && !String(p.dataKey).endsWith('__p'))
+  if (items.length === 0) return null
   return (
     <div
       className="rounded-lg px-3 py-2 text-xs shadow-lg"
@@ -24,8 +28,7 @@ export default function ChartTooltip({
       <div className="mb-1 font-medium" style={{ color: 'var(--text-secondary)' }}>
         {labelFormatter ? labelFormatter(String(label)) : String(label)}
       </div>
-      {payload
-        .filter((p) => p.value != null)
+      {items
         .map((p) => (
           <div key={String(p.dataKey)} className="flex items-center gap-2 py-0.5">
             <span
