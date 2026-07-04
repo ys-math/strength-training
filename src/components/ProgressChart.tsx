@@ -113,16 +113,44 @@ function ProgressTooltip({
   )
 }
 
-// Direct end-label: renders the lift code at its final defined point only.
-// `dyExtra` nudges labels apart when two lifts end at the same value (common in
-// max-weight mode, where kg are discrete plate increments) so they don't overlap.
+// Direct end-label: renders the lift code at its final defined point only, on a
+// translucent chip so it stays legible over gridlines and other lines. `dyExtra`
+// nudges labels apart when two lifts end at close values so they don't overlap.
 function makeEndLabel(lastIndex: number, color: string, text: string, dyExtra: number) {
   return function EndLabel(props: { x?: number; y?: number; index?: number }) {
     if (props.index !== lastIndex || props.x == null || props.y == null) return null
+    const x = props.x + 8
+    const y = props.y + 4 + dyExtra
+    const w = text.length * 7 + 6
     return (
-      <text x={props.x + 8} y={props.y} dy={4 + dyExtra} fontSize={11} fontWeight={700} fill={color}>
-        {text}
-      </text>
+      <g>
+        <rect x={x - 3} y={y - 10} width={w} height={14} rx={3} fill="var(--page)" fillOpacity={0.85} />
+        <text x={x} y={y} fontSize={11} fontWeight={700} fill={color}>
+          {text}
+        </text>
+      </g>
+    )
+  }
+}
+
+// Goal target label: renders "{code} {kg}" at the left edge of a horizontal
+// ReferenceLine, on the same translucent chip treatment as end-labels. Always on
+// the left (end-of-line labels live on the right) so the two groups never collide;
+// `dy` fans out labels whose targets are close in value (see declutterByValue).
+function makeGoalLabel(color: string, text: string, dy: number) {
+  return function GoalLabel(props: { viewBox?: { x?: number; y?: number } }) {
+    const vb = props.viewBox
+    if (vb?.x == null || vb.y == null) return null
+    const x = vb.x + 10
+    const y = vb.y + dy
+    const w = text.length * 5.6 + 8
+    return (
+      <g>
+        <rect x={x - 4} y={y - 9} width={w} height={14} rx={3} fill="var(--page)" fillOpacity={0.85} />
+        <text x={x} y={y + 3} fontSize={10} fontWeight={700} fill={color}>
+          {text}
+        </text>
+      </g>
     )
   }
 }
@@ -136,24 +164,25 @@ function makeProjDot(projIndex: number, color: string) {
   }
 }
 
-// Spread tied end-labels vertically (12px) so lifts finishing at the same value
-// don't overprint. `points` is each lift's rightmost { value } to label.
-function labelOffsetsFor(points: Partial<Record<LiftKey, number>>): Record<string, number> {
-  const groups = new Map<number, LiftKey[]>()
-  for (const key of Object.keys(points) as LiftKey[]) {
-    const value = points[key]
-    if (value == null) continue
-    const rounded = Math.round(value * 10) / 10
-    const group = groups.get(rounded) ?? []
-    group.push(key)
-    groups.set(rounded, group)
-  }
+// Vertical label decluttering: chain-clusters values that fall within `minGap` of
+// their neighbor (not just exact ties — e.g. 67.5 and 70 are visually close on a
+// compressed axis) and fans each cluster out symmetrically by `step` px so labels
+// never overprint. `points` is each lift's value to label.
+function declutterByValue(points: Partial<Record<LiftKey, number>>, minGap: number, step = 12): Record<string, number> {
+  const entries = (Object.entries(points) as [LiftKey, number | undefined][])
+    .filter((e): e is [LiftKey, number] => e[1] != null)
+    .sort((a, b) => b[1] - a[1])
   const offsets: Record<string, number> = {}
-  for (const group of groups.values()) {
+  let i = 0
+  while (i < entries.length) {
+    let j = i
+    while (j + 1 < entries.length && entries[j][1] - entries[j + 1][1] < minGap) j++
+    const group = entries.slice(i, j + 1)
     const mid = (group.length - 1) / 2
-    group.forEach((key, i) => {
-      offsets[key] = Math.round((i - mid) * 12)
+    group.forEach(([key], k) => {
+      offsets[key] = Math.round((k - mid) * step)
     })
+    i = j + 1
   }
   return offsets
 }
@@ -259,7 +288,30 @@ export default function ProgressChart({
     return m
   }, [data, lastIndex, projected, suggestions, mode])
 
-  const labelOffsets = useMemo(() => labelOffsetsFor(rightMost), [rightMost])
+  // Rough value scale of the chart (end points + visible goals) used only to size the
+  // "close enough to collide" threshold below — doesn't need to match the axis exactly.
+  const domainMax = useMemo(() => {
+    const vals = [...Object.values(rightMost), ...(goalsOn ? Object.values(goals) : [])].filter(
+      (v): v is number => v != null && v > 0,
+    )
+    return vals.length ? Math.max(...vals) : 100
+  }, [rightMost, goals, goalsOn])
+
+  const labelOffsets = useMemo(
+    () => declutterByValue(rightMost, Math.max(4, domainMax * 0.05)),
+    [rightMost, domainMax],
+  )
+
+  const visibleGoals = useMemo<Partial<Record<LiftKey, number>>>(() => {
+    if (!goalsOn) return {}
+    const m: Partial<Record<LiftKey, number>> = {}
+    for (const lift of LIFTS) if (!hidden.has(lift.key) && goals[lift.key] > 0) m[lift.key] = goals[lift.key]
+    return m
+  }, [goalsOn, goals, hidden])
+  const goalLabelOffsets = useMemo(
+    () => declutterByValue(visibleGoals, Math.max(4, domainMax * 0.06), 14),
+    [visibleGoals, domainMax],
+  )
 
   // Span slider: `start` clamps the history-depth handle; `shown` is the visible slice
   // (right edge pinned to the latest point / projection). Index-keyed labels & dots are
@@ -360,7 +412,7 @@ export default function ProgressChart({
             />
             <Tooltip content={<ProgressTooltip mode={mode} suggestions={suggestions} />} />
             {goalsOn &&
-              LIFTS.map((lift, i) =>
+              LIFTS.map((lift) =>
                 hidden.has(lift.key) || !(goals[lift.key] > 0) ? null : (
                   <ReferenceLine
                     key={`${lift.key}__goal`}
@@ -369,14 +421,15 @@ export default function ProgressChart({
                     strokeDasharray="4 4"
                     strokeOpacity={0.7}
                     ifOverflow="extendDomain"
-                    label={{
-                      value: `${lift.key} ${fmtPlate(goals[lift.key])}`,
-                      // Alternate sides so lifts sharing a goal value don't overprint.
-                      position: i % 2 === 0 ? 'insideLeft' : 'insideRight',
-                      fill: lift.color,
-                      fontSize: 10,
-                      fontWeight: 700,
-                    }}
+                    // Always on the left — end-of-line labels live on the right — so the
+                    // two label groups never collide; declutter fans out close targets.
+                    label={
+                      makeGoalLabel(
+                        lift.color,
+                        `${lift.key} ${fmtPlate(goals[lift.key])}`,
+                        goalLabelOffsets[lift.key] ?? 0,
+                      ) as never
+                    }
                   />
                 ),
               )}
