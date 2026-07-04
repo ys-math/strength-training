@@ -34,90 +34,6 @@ CSV export. Modern dark UI, deployed free on GitHub Pages.
 
 Estimated 1RM uses the Epley formula: `weight × (1 + reps / 30)`.
 
-## RM reference table
-
-Percentage of 1RM by rep count, derived from the same Epley formula the dashboard
-uses (`%1RM = 100 / (1 + reps / 30)`). The kg columns are working weights for each
-lift, computed from the current estimated-1RM PRs in `strong_workouts.csv` (Bench
-73 kg · Squat 83 kg · Deadlift 99 kg · OHP 35 kg) — re-derive them as those PRs move.
-
-| Reps | % of 1RM | Bench (kg) | Squat (kg) | Deadlift (kg) | OHP (kg) |
-| ---: | -------: | ---------: | ---------: | ------------: | -------: |
-|    1 |      97% |         71 |         81 |            96 |       34 |
-|    2 |      94% |         68 |         78 |            93 |       33 |
-|    3 |      91% |         66 |         76 |            90 |       32 |
-|    4 |      88% |         64 |         74 |            87 |       31 |
-|    5 |      86% |         62 |         71 |            85 |       30 |
-|    6 |      83% |         61 |         69 |            83 |       29 |
-|    7 |      81% |         59 |         68 |            80 |       28 |
-|    8 |      79% |         58 |         66 |            78 |       28 |
-|    9 |      77% |         56 |         64 |            76 |       27 |
-|   10 |      75% |         55 |         62 |            74 |       26 |
-|   11 |      73% |         53 |         61 |            72 |       26 |
-|   12 |      71% |         52 |         60 |            71 |       25 |
-
-## Estimated 1RM lookup table
-
-Find the weight you lifted (rows, kg) and the reps you got (columns) to read off
-the estimated 1RM, via the same Epley formula: `weight × (1 + reps / 30)`, rounded
-to the nearest kg.
-
-| Weight (kg) |   2 |   3 |   4 |   5 |   6 |   7 |   8 |   9 |  10 |
-| ----------: | --: | --: | --: | --: | --: | --: | --: | --: | --: |
-|          20 |  21 |  22 |  23 |  23 |  24 |  25 |  25 |  26 |  27 |
-|        22.5 |  24 |  25 |  26 |  26 |  27 |  28 |  29 |  29 |  30 |
-|          25 |  27 |  28 |  28 |  29 |  30 |  31 |  32 |  33 |  33 |
-|        27.5 |  29 |  30 |  31 |  32 |  33 |  34 |  35 |  36 |  37 |
-|          30 |  32 |  33 |  34 |  35 |  36 |  37 |  38 |  39 |  40 |
-|        32.5 |  35 |  36 |  37 |  38 |  39 |  40 |  41 |  42 |  43 |
-|          35 |  37 |  39 |  40 |  41 |  42 |  43 |  44 |  46 |  47 |
-|        37.5 |  40 |  41 |  43 |  44 |  45 |  46 |  48 |  49 |  50 |
-|          40 |  43 |  44 |  45 |  47 |  48 |  49 |  51 |  52 |  53 |
-|        42.5 |  45 |  47 |  48 |  50 |  51 |  52 |  54 |  55 |  57 |
-|          45 |  48 |  50 |  51 |  53 |  54 |  56 |  57 |  59 |  60 |
-|        47.5 |  51 |  52 |  54 |  55 |  57 |  59 |  60 |  62 |  63 |
-|          50 |  53 |  55 |  57 |  58 |  60 |  62 |  63 |  65 |  67 |
-|        52.5 |  56 |  58 |  60 |  61 |  63 |  65 |  67 |  68 |  70 |
-|          55 |  59 |  61 |  62 |  64 |  66 |  68 |  70 |  72 |  73 |
-|        57.5 |  61 |  63 |  65 |  67 |  69 |  71 |  73 |  75 |  77 |
-|          60 |  64 |  66 |  68 |  70 |  72 |  74 |  76 |  78 |  80 |
-|        62.5 |  67 |  69 |  71 |  73 |  75 |  77 |  79 |  81 |  83 |
-|          65 |  69 |  72 |  74 |  76 |  78 |  80 |  82 |  85 |  87 |
-|        67.5 |  72 |  74 |  77 |  79 |  81 |  83 |  86 |  88 |  90 |
-|          70 |  75 |  77 |  79 |  82 |  84 |  86 |  89 |  91 |  93 |
-|        72.5 |  77 |  80 |  82 |  85 |  87 |  89 |  92 |  94 |  97 |
-|          75 |  80 |  83 |  85 |  88 |  90 |  93 |  95 |  98 | 100 |
-|        77.5 |  83 |  85 |  88 |  90 |  93 |  96 |  98 | 101 | 103 |
-|          80 |  85 |  88 |  91 |  93 |  96 |  99 | 101 | 104 | 107 |
-|        82.5 |  88 |  91 |  94 |  96 |  99 | 102 | 105 | 107 | 110 |
-|          85 |  91 |  94 |  96 |  99 | 102 | 105 | 108 | 111 | 113 |
-|        87.5 |  93 |  96 |  99 | 102 | 105 | 108 | 111 | 114 | 117 |
-|          90 |  96 |  99 | 102 | 105 | 108 | 111 | 114 | 117 | 120 |
-|        92.5 |  99 | 102 | 105 | 108 | 111 | 114 | 117 | 120 | 123 |
-|          95 | 101 | 105 | 108 | 111 | 114 | 117 | 120 | 124 | 127 |
-|        97.5 | 104 | 107 | 111 | 114 | 117 | 120 | 124 | 127 | 130 |
-|         100 | 107 | 110 | 113 | 117 | 120 | 123 | 127 | 130 | 133 |
-|       102.5 | 109 | 113 | 116 | 120 | 123 | 126 | 130 | 133 | 137 |
-|         105 | 112 | 116 | 119 | 123 | 126 | 130 | 133 | 137 | 140 |
-|       107.5 | 115 | 118 | 122 | 125 | 129 | 133 | 136 | 140 | 143 |
-|         110 | 117 | 121 | 125 | 128 | 132 | 136 | 139 | 143 | 147 |
-|       112.5 | 120 | 124 | 128 | 131 | 135 | 139 | 143 | 146 | 150 |
-|         115 | 123 | 127 | 130 | 134 | 138 | 142 | 146 | 150 | 153 |
-|       117.5 | 125 | 129 | 133 | 137 | 141 | 145 | 149 | 153 | 157 |
-|         120 | 128 | 132 | 136 | 140 | 144 | 148 | 152 | 156 | 160 |
-|       122.5 | 131 | 135 | 139 | 143 | 147 | 151 | 155 | 159 | 163 |
-|         125 | 133 | 138 | 142 | 146 | 150 | 154 | 158 | 163 | 167 |
-|       127.5 | 136 | 140 | 145 | 149 | 153 | 157 | 162 | 166 | 170 |
-|         130 | 139 | 143 | 147 | 152 | 156 | 160 | 165 | 169 | 173 |
-|       132.5 | 141 | 146 | 150 | 155 | 159 | 163 | 168 | 172 | 177 |
-|         135 | 144 | 149 | 153 | 158 | 162 | 167 | 171 | 176 | 180 |
-|       137.5 | 147 | 151 | 156 | 160 | 165 | 170 | 174 | 179 | 183 |
-|         140 | 149 | 154 | 159 | 163 | 168 | 173 | 177 | 182 | 187 |
-|       142.5 | 152 | 157 | 162 | 166 | 171 | 176 | 181 | 185 | 190 |
-|         145 | 155 | 160 | 164 | 169 | 174 | 179 | 184 | 189 | 193 |
-|       147.5 | 157 | 162 | 167 | 172 | 177 | 182 | 187 | 192 | 197 |
-|         150 | 160 | 165 | 170 | 175 | 180 | 185 | 190 | 195 | 200 |
-
 ## How suggestions work
 
 The **Next session** card proposes a load × reps for each lift, computed purely from
@@ -180,8 +96,8 @@ carries `projectedWeight` / `projectedE1rm` for this); a deload projects nothing
 7. **No hardcoded periodization model or Prilepin table.** Head-to-head comparisons of
    linear vs. undulating periodization return inconsistent, frequently null differences,
    and Prilepin's table is *observational* — distilled from watching successful lifters, not
-   an experiment. Both are fine as optional reference (the RM tables above are exactly that)
-   but are deliberately not wired into the engine as if they were settled law.
+   an experiment. Both are fine as optional reference, but are deliberately not wired into the
+   engine as if they were settled law.
 
 ## How goals work
 
