@@ -1,5 +1,6 @@
 import { LIFTS, LIFT_BY_KEY, type LiftKey, type LiftPR, type LiftSession, type SetRow } from './types'
 import type { MetricMode } from './mode'
+import type { GoalHorizon } from './goals'
 import { epley } from './parse'
 
 export const round1 = (n: number) => Math.round(n * 10) / 10
@@ -419,6 +420,9 @@ export const DEFAULT_SUGGESTION_CONFIG: SuggestionConfig = {
 
 export type SuggestionAction = 'increase-load' | 'add-rep' | 'build-reps' | 'deload' | 'insufficient-data'
 
+// How the lift's recent trajectory tracks against its short-term max-weight goal.
+export type GoalPace = 'met' | 'ahead' | 'on-track' | 'behind'
+
 export interface TopSetSummary {
   load: number
   reps: number
@@ -438,7 +442,15 @@ export interface Suggestion {
   setsDelta: number // target − prev sets
   projectedWeight: number | null // where the trend lands next session if the target is met (null only w/o history)
   projectedE1rm: number | null // epley(target.load, target.reps) (flat for a hold/deload)
+  goalPace: GoalPace | null // vs. the short-term max-weight goal (null when no goal is set)
+  requiredPerWeek: number | null // kg/week still needed to hit that goal on time
   rationale: string // one-line explanation
+}
+
+// Short-term goal context threaded into the suggestion engine.
+export interface GoalContext {
+  target: Partial<Record<LiftKey, number>> // per-lift short-term max-weight target, kg
+  weeksLeft: number // weeks until the short-term horizon
 }
 
 // True once any row carries an RPE value. Strong always emits the RPE *column*,
@@ -547,6 +559,8 @@ function buildSuggestion(
     setsDelta: prev ? target.sets - prev.sets : 0,
     projectedWeight: target.load,
     projectedE1rm: round1(epley(target.load, target.reps)),
+    goalPace: null,
+    requiredPerWeek: null,
     rationale,
   }
 }
@@ -568,6 +582,7 @@ function suggestForLift(
   lift: LiftKey,
   config: SuggestionConfig,
   rpeAvailable: boolean,
+  goalCtx?: GoalContext,
 ): Suggestion {
   const label = LIFT_BY_KEY.get(lift)?.label ?? lift
   const tops = topWorkingSets(rows, lift)
@@ -584,6 +599,8 @@ function suggestForLift(
       setsDelta: 0,
       projectedWeight: null,
       projectedE1rm: null,
+      goalPace: null,
+      requiredPerWeek: null,
       rationale: `No ${label} history in the data yet.`,
     }
   }
@@ -595,39 +612,78 @@ function suggestForLift(
   const sets = Math.max(1, last.sets)
   const stagnant = isStagnant(tops, config.stagnationWindow)
 
+  // Goal pace vs. the short-term max-weight target, if one is set. Goal fields are
+  // spread onto every returned suggestion via `g`.
+  let pace: GoalPace | null = null
+  let requiredPerWeek: number | null = null
+  const target = goalCtx?.target[lift]
+  if (goalCtx && target != null && target > 0) {
+    const currentBest = Math.max(...tops.map((t) => t.load))
+    pace = goalPace(currentBest, target, goalCtx.weeksLeft, recentRatePerWeek(rows, lift))
+    requiredPerWeek = goalCtx.weeksLeft > 0 ? round1(Math.max(0, (target - currentBest) / goalCtx.weeksLeft)) : null
+  }
+  const g = { goalPace: pace, requiredPerWeek }
+
   // 1. Double progression on the top working set — strongest signal.
   if (last.reps >= hi) {
     // 3. RPE (only if tracked): rising effort at the same load/reps → hold.
     if (rpeAvailable && rpeRisingAtConstant(tops)) {
-      return buildSuggestion(
-        lift,
-        'add-rep',
-        { load: last.load, reps: last.reps, sets },
-        prev,
-        `Hit the top of the ${lo}–${hi} range, but RPE is rising at the same load — hold before adding weight.`,
-      )
+      return {
+        ...buildSuggestion(
+          lift,
+          'add-rep',
+          { load: last.load, reps: last.reps, sets },
+          prev,
+          `Hit the top of the ${lo}–${hi} range, but RPE is rising at the same load — hold before adding weight.`,
+        ),
+        ...g,
+      }
     }
-    return buildSuggestion(
-      lift,
-      'increase-load',
-      { load: last.load + inc, reps: lo, sets },
-      prev,
-      `Hit ${sets}×${last.reps} @ ${last.load}kg last session (top of ${lo}–${hi} range).`,
-    )
+    return {
+      ...buildSuggestion(
+        lift,
+        'increase-load',
+        { load: last.load + inc, reps: lo, sets },
+        prev,
+        `Hit ${sets}×${last.reps} @ ${last.load}kg last session (top of ${lo}–${hi} range).`,
+      ),
+      ...g,
+    }
   }
 
   if (last.reps >= lo) {
     // Within range: add a rep, unless e1RM has plateaued (2. deload).
     if (stagnant) {
-      return deloadSuggestion(lift, last, config, `est. 1RM flat over the last ${config.stagnationWindow} sessions`)
+      // Goal-aware refinement: if you're behind pace and only *mildly* stalled
+      // (still within range, not a hard below-range failure), push one more rep
+      // before easing off. Load jumps and hard deloads are never touched.
+      if (pace === 'behind') {
+        return {
+          ...buildSuggestion(
+            lift,
+            'add-rep',
+            { load: last.load, reps: last.reps + 1, sets },
+            prev,
+            `Behind your goal pace and only mildly stalled — push +1 rep before easing off.`,
+          ),
+          ...g,
+        }
+      }
+      return {
+        ...deloadSuggestion(lift, last, config, `est. 1RM flat over the last ${config.stagnationWindow} sessions`),
+        ...g,
+      }
     }
-    return buildSuggestion(
-      lift,
-      'add-rep',
-      { load: last.load, reps: last.reps + 1, sets },
-      prev,
-      `Reps within the ${lo}–${hi} range but not at the top yet.`,
-    )
+    return {
+      ...buildSuggestion(
+        lift,
+        'add-rep',
+        { load: last.load, reps: last.reps + 1, sets },
+        prev,
+        `Reps within the ${lo}–${hi} range but not at the top yet.`,
+      ),
+      ...g,
+    }
   }
 
   // Below range: hold and build reps, unless it's dragging on (2. deload).
@@ -636,26 +692,114 @@ function suggestForLift(
     const why = belowRepeated
       ? `stuck below ${lo} reps ${config.belowRangeRepeat}+ sessions running`
       : `est. 1RM flat over the last ${config.stagnationWindow} sessions`
-    return deloadSuggestion(lift, last, config, why)
+    return { ...deloadSuggestion(lift, last, config, why), ...g }
   }
-  return buildSuggestion(
-    lift,
-    'build-reps',
-    { load: last.load, reps: last.reps + 1, sets },
-    prev,
-    `Below the ${lo}–${hi} range — rebuild reps at this load before adding weight.`,
-  )
+  return {
+    ...buildSuggestion(
+      lift,
+      'build-reps',
+      { load: last.load, reps: last.reps + 1, sets },
+      prev,
+      `Below the ${lo}–${hi} range — rebuild reps at this load before adding weight.`,
+    ),
+    ...g,
+  }
 }
 
-// Per-lift next-session suggestion, computed purely from set history.
+// Per-lift next-session suggestion, computed purely from set history. Pass a
+// `goalCtx` to make it goal-aware (adds `goalPace`/`requiredPerWeek` and the
+// behind-pace refinement); omit it and behavior is unchanged.
 export function nextSessionSuggestion(
   rows: SetRow[],
+  goalCtx?: GoalContext,
   config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG,
 ): Record<LiftKey, Suggestion> {
   const rpeAvailable = hasRpeData(rows)
   const result = {} as Record<LiftKey, Suggestion>
   for (const lift of LIFTS) {
-    result[lift.key] = suggestForLift(rows, lift.key, config, rpeAvailable)
+    result[lift.key] = suggestForLift(rows, lift.key, config, rpeAvailable, goalCtx)
   }
   return result
+}
+
+// ---- Goals: recommended targets, progress pace -------------------------------
+
+export interface GoalConfig {
+  gainPct: Record<GoalHorizon, number> // cumulative %-of-current gain per horizon
+  minShortGain: number // never recommend less than this for the short-term (kg)
+  round: number // snap targets to this plate increment (kg)
+}
+
+// Strength gains decelerate with training age, so the recommended cumulative gain
+// grows sub-linearly across horizons. Rough guide only — see README.
+export const DEFAULT_GOAL_CONFIG: GoalConfig = {
+  gainPct: { short: 0.03, mid: 0.055, long: 0.09 },
+  minShortGain: 2.5,
+  round: 2.5,
+}
+
+const snapTo = (v: number, step: number) => Math.round(v / step) * step
+
+// Current all-time heaviest single for a lift (0 when no history).
+export function currentMaxWeight(rows: SetRow[], lift: LiftKey): number {
+  const pr = liftPR(liftSessions(rows, lift))
+  return pr ? pr.maxWeight : 0
+}
+
+// Recommended max-weight target per horizon: current snapped up by a decelerating
+// %, forced strictly increasing and at least one plate over current short-term.
+export function recommendedGoals(
+  rows: SetRow[],
+  lift: LiftKey,
+  config: GoalConfig = DEFAULT_GOAL_CONFIG,
+): Record<GoalHorizon, number> {
+  const current = currentMaxWeight(rows, lift)
+  if (current <= 0) return { short: 0, mid: 0, long: 0 }
+  const step = config.round
+  let short = snapTo(current * (1 + config.gainPct.short), step)
+  if (short < current + config.minShortGain) short = snapTo(current + config.minShortGain, step)
+  let mid = snapTo(current * (1 + config.gainPct.mid), step)
+  if (mid <= short) mid = short + step
+  let long = snapTo(current * (1 + config.gainPct.long), step)
+  if (long <= mid) long = mid + step
+  return { short, mid, long }
+}
+
+// Max-weight change per week over the trailing ~`weeksWindow` weeks (best-to-date,
+// so it only reflects genuine PRs; floored at 0).
+export function recentRatePerWeek(rows: SetRow[], lift: LiftKey, weeksWindow = 8): number {
+  const tops = topWorkingSets(rows, lift)
+  if (tops.length < 2) return 0
+  const W = 7 * 86400000
+  const lastTs = tops[tops.length - 1].ts
+  const cutoff = lastTs - weeksWindow * W
+  let current = 0
+  let baseline = 0
+  let haveBaseline = false
+  for (const t of tops) {
+    if (t.load > current) current = t.load
+    if (t.ts <= cutoff) {
+      if (t.load > baseline) baseline = t.load
+      haveBaseline = true
+    }
+  }
+  let weeks = weeksWindow
+  if (!haveBaseline) {
+    baseline = tops[0].load
+    weeks = (lastTs - tops[0].ts) / W
+  }
+  if (weeks < 1) return 0
+  return Math.max(0, round1((current - baseline) / weeks))
+}
+
+// Where the lift's recent rate puts it against the short-term target.
+export function goalPace(current: number, target: number, weeksLeft: number, recentRate: number): GoalPace {
+  if (current >= target) return 'met'
+  if (weeksLeft <= 0) return 'behind'
+  const required = (target - current) / weeksLeft
+  if (required <= 0) return 'met'
+  const ratio = recentRate / required
+  if (ratio >= 1) return 'ahead'
+  if (ratio >= 0.6) return 'on-track'
+  return 'behind'
 }

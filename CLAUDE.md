@@ -72,6 +72,19 @@ drawn to a synthetic future date; tooltips ignore any `__p` dataKey.
 the `prev` top set, target `load/reps/sets`, per-field deltas, and the projections. `NextSession`
 and `LatestWorkout` share the `SetChip` / `groupSets` pill from `components/SetChip.tsx`.
 
+### Goals & roadmap
+
+Per-lift **max-weight** targets at 3/6/12-month horizons, persisted in `localStorage` via
+`useGoals` (`GoalMap` + helpers in `src/lib/goals.ts`; empty entry ⇒ use the recommendation, so
+only overrides are stored). `metrics.ts` adds `recommendedGoals` (decelerating %-gain, snapped to
+2.5 kg — `DEFAULT_GOAL_CONFIG`), `recentRatePerWeek`, and `goalPace`. `nextSessionSuggestion(rows,
+goalCtx?, config?)` is now **goal-aware**: with a short-term `GoalContext` it fills
+`Suggestion.goalPace`/`requiredPerWeek` and, when *behind* pace and only mildly stalled, pushes a
+rep instead of a soft deload (hard deloads/load-jumps unchanged). `Dashboard` computes the
+goal-aware `suggestions` **once** and passes them as a prop to both `NextSession` and
+`ProgressChart` (so the card and the chart projection agree). `Roadmap.tsx` renders the editable
+timeline. Reasoning/evidence live in README's "How goals work".
+
 ### Theming
 
 Three selectable UI themes — `modern-dark` (default), `modern-light`, `cozy` — defined in

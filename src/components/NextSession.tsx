@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import { nextSessionSuggestion, hasRpeData, type Suggestion } from '../lib/metrics'
-import { LIFTS, type SetRow } from '../lib/types'
+import { hasRpeData, type GoalPace, type Suggestion } from '../lib/metrics'
+import { LIFTS, type LiftKey, type SetRow } from '../lib/types'
 import ChartCard from './ChartCard'
 import SetChip from './SetChip'
 
@@ -11,6 +11,25 @@ const ACTION_LABEL: Record<string, string> = {
   'build-reps': 'build reps',
   deload: 'deload',
   'insufficient-data': 'no data',
+}
+
+const PACE: Record<GoalPace, { label: string; color: string }> = {
+  met: { label: '✓ goal met', color: 'var(--delta-good)' },
+  ahead: { label: 'ahead of goal', color: 'var(--delta-good)' },
+  'on-track': { label: 'on track', color: 'var(--text-muted)' },
+  behind: { label: 'behind goal', color: 'var(--lift-dl)' },
+}
+
+function PaceChip({ pace }: { pace: GoalPace }) {
+  const p = PACE[pace]
+  return (
+    <span
+      className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+      style={{ border: '1px solid var(--border)', color: p.color }}
+    >
+      {p.label}
+    </span>
+  )
 }
 
 // The one change worth highlighting vs. the previous session, colored by intent.
@@ -34,8 +53,13 @@ function DeltaBadge({ s }: { s: Suggestion }) {
   )
 }
 
-export default function NextSession({ rows }: { rows: SetRow[] }) {
-  const suggestions = useMemo(() => nextSessionSuggestion(rows), [rows])
+export default function NextSession({
+  rows,
+  suggestions,
+}: {
+  rows: SetRow[]
+  suggestions: Record<LiftKey, Suggestion>
+}) {
   const rpe = useMemo(() => hasRpeData(rows), [rows])
 
   return (
@@ -61,12 +85,15 @@ export default function NextSession({ rows }: { rows: SetRow[] }) {
                     {lift.label}
                   </span>
                 </div>
-                <span
-                  className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                  style={{ border: '1px solid var(--border)', color: isDeload ? 'var(--lift-dl)' : 'var(--text-muted)' }}
-                >
-                  {ACTION_LABEL[s.action] ?? s.action}
-                </span>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {s.goalPace && <PaceChip pace={s.goalPace} />}
+                  <span
+                    className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                    style={{ border: '1px solid var(--border)', color: isDeload ? 'var(--lift-dl)' : 'var(--text-muted)' }}
+                  >
+                    {ACTION_LABEL[s.action] ?? s.action}
+                  </span>
+                </div>
               </div>
 
               {!noData && (

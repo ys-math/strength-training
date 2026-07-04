@@ -1,11 +1,14 @@
 import { useMemo } from 'react'
-import type { SetRow } from '../lib/types'
-import { overallStats } from '../lib/metrics'
+import { LIFTS, type LiftKey, type SetRow } from '../lib/types'
+import { nextSessionSuggestion, overallStats, recommendedGoals, type GoalContext } from '../lib/metrics'
 import { fmtLongDate } from '../lib/format'
+import { horizonDate, weeksUntil } from '../lib/goals'
 import { useMetricMode } from '../hooks/useMetricMode'
+import { useGoals } from '../hooks/useGoals'
 import StatCards from './StatCards'
 import LatestWorkout from './LatestWorkout'
 import NextSession from './NextSession'
+import Roadmap from './Roadmap'
 import ProgressChart from './ProgressChart'
 import VolumeChart from './VolumeChart'
 import FrequencyHeatmap from './FrequencyHeatmap'
@@ -17,6 +20,19 @@ import ThemeSwitcher from './ThemeSwitcher'
 export default function Dashboard({ rows }: { rows: SetRow[] }) {
   const stats = useMemo(() => overallStats(rows), [rows])
   const { mode, setMode } = useMetricMode()
+  const { goals, setGoal, resetLift } = useGoals()
+
+  // Resolve the short-term goal per lift (user override ?? recommendation) and make
+  // the next-session suggestion goal-aware. Computed once here, then passed to the
+  // chart and the card so their projection stays consistent.
+  const suggestions = useMemo(() => {
+    const target: Partial<Record<LiftKey, number>> = {}
+    for (const lift of LIFTS) {
+      target[lift.key] = goals[lift.key]?.short ?? recommendedGoals(rows, lift.key).short
+    }
+    const goalCtx: GoalContext = { target, weeksLeft: weeksUntil(horizonDate(3)) }
+    return nextSessionSuggestion(rows, goalCtx)
+  }, [rows, goals])
 
   if (rows.length === 0) {
     return (
@@ -45,9 +61,10 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
         <StatCards rows={rows} mode={mode} />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <LatestWorkout rows={rows} />
-          <NextSession rows={rows} />
+          <NextSession rows={rows} suggestions={suggestions} />
         </div>
-        <ProgressChart rows={rows} mode={mode} />
+        <Roadmap rows={rows} goals={goals} setGoal={setGoal} resetLift={resetLift} />
+        <ProgressChart rows={rows} mode={mode} suggestions={suggestions} />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <VolumeChart rows={rows} />
           <FrequencyHeatmap rows={rows} />

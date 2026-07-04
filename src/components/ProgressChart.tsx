@@ -10,7 +10,7 @@ import {
   YAxis,
 } from 'recharts'
 import { LIFT_BY_KEY, LIFTS, type LiftKey } from '../lib/types'
-import { e1rmSeries, maxWeightSeries, nextSessionSuggestion, type MaxWeightPoint, type Suggestion } from '../lib/metrics'
+import { e1rmSeries, maxWeightSeries, type MaxWeightPoint, type Suggestion } from '../lib/metrics'
 import { fmtDate, fmtLongDate } from '../lib/format'
 import type { SetRow } from '../lib/types'
 import type { MetricMode } from '../lib/mode'
@@ -33,13 +33,15 @@ function ProgressTooltip({
   if (!active || !payload || payload.length === 0) return null
   const row = payload[0].payload as Record<string, unknown>
 
+  const metricNote = mode === 'e1rm' ? 'est. 1RM' : 'heaviest set'
+
   if (row.__projection === true) {
     const items = LIFTS.filter((l) => row[`${l.key}__p`] != null && suggestions[l.key].prev != null)
     if (items.length === 0) return null
     return (
       <div className={tipClass} style={tipStyle}>
         <div className="mb-1 font-medium" style={{ color: 'var(--text-secondary)' }}>
-          Next session · projected
+          Next session · projected {metricNote}
         </div>
         {items.map((l) => {
           const s = suggestions[l.key]
@@ -48,8 +50,17 @@ function ProgressTooltip({
               <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: l.color }} />
               <span style={{ color: 'var(--text-muted)' }}>{l.label}</span>
               <span className="ml-auto tabular-nums font-medium">
-                {s.load} kg × {s.reps}
-                <span style={{ color: 'var(--text-muted)' }}> · {s.sets} {s.sets === 1 ? 'set' : 'sets'}</span>
+                {mode === 'e1rm' ? (
+                  <>
+                    est. 1RM {s.projectedE1rm} kg
+                    <span style={{ color: 'var(--text-muted)' }}> · {s.load}×{s.reps}</span>
+                  </>
+                ) : (
+                  <>
+                    {s.load} kg × {s.reps}
+                    <span style={{ color: 'var(--text-muted)' }}> · {s.sets} {s.sets === 1 ? 'set' : 'sets'}</span>
+                  </>
+                )}
               </span>
             </div>
           )
@@ -66,7 +77,7 @@ function ProgressTooltip({
   return (
     <div className={tipClass} style={tipStyle}>
       <div className="mb-1 font-medium" style={{ color: 'var(--text-secondary)' }}>
-        {fmtLongDate(String(label))}
+        {fmtLongDate(String(label))} <span style={{ color: 'var(--text-muted)' }}>· {metricNote}</span>
       </div>
       {items.map((p) => {
         const key = p.dataKey as LiftKey
@@ -139,7 +150,15 @@ function labelOffsetsFor(points: Partial<Record<LiftKey, number>>): Record<strin
   return offsets
 }
 
-export default function ProgressChart({ rows, mode }: { rows: SetRow[]; mode: MetricMode }) {
+export default function ProgressChart({
+  rows,
+  mode,
+  suggestions,
+}: {
+  rows: SetRow[]
+  mode: MetricMode
+  suggestions: Record<LiftKey, Suggestion>
+}) {
   const data = useMemo(
     () => (mode === 'e1rm' ? e1rmSeries(rows) : maxWeightSeries(rows)),
     [rows, mode],
@@ -158,8 +177,6 @@ export default function ProgressChart({ rows, mode }: { rows: SetRow[]; mode: Me
     }
     return map
   }, [data])
-
-  const suggestions = useMemo(() => nextSessionSuggestion(rows), [rows])
 
   // The per-lift projection value in the current metric (null when the goal doesn't
   // advance the trend — deload / hold / no history).

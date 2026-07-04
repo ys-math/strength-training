@@ -19,7 +19,10 @@ CSV export. Modern dark UI, deployed free on GitHub Pages.
 - **PR cards** — the PR in the active metric and a from-previous-PR delta.
 - **Latest workout** — the most recent session in full: every exercise, set, and volume, as chips.
 - **Next session** — a suggested load × reps per lift, shown as `previous → target` chips with the
-  change highlighted (see [How suggestions work](#how-suggestions-work)).
+  change highlighted, plus a goal-pace chip (see [How suggestions work](#how-suggestions-work)).
+- **Goals & roadmap** — per-lift max-weight targets at 3 / 6 / 12 months on an editable timeline,
+  with recommended defaults, progress bars, and on-track indicators (see
+  [How goals work](#how-goals-work)). Saved in your browser.
 - **Weekly volume** — working tonnage (weight × reps), warmup sets excluded.
 - **Training frequency** — GitHub-style calendar heatmap of working sets per day.
 - **Per-lift detail** — est. 1RM vs. heaviest set for any single lift.
@@ -155,6 +158,27 @@ carries `projectedWeight` / `projectedE1rm` for this); a deload projects nothing
    an experiment. Both are fine as optional reference (the RM tables above are exactly that)
    but are deliberately not wired into the engine as if they were settled law.
 
+## How goals work
+
+The **Goals & roadmap** card holds a per-lift **max-weight** (actual heaviest single) target for
+three horizons — short (3 mo), mid (6 mo), long (1 yr). Targets are editable and saved in
+`localStorage` (`useGoals`); an empty field falls back to the recommendation, so you only store
+explicit overrides.
+
+- **Recommended targets** (`recommendedGoals` in `metrics.ts`, thresholds in
+  `DEFAULT_GOAL_CONFIG`) grow your current best by a **decelerating** percentage (≈ +3 % / +5.5 %
+  / +9 % cumulative), snapped to 2.5 kg and forced strictly increasing. The deceleration reflects
+  that strength gains slow markedly with training age — a robust finding, though we can't detect
+  your training age, so treat these as a **rough guide, not a promise**.
+- **Pace** (`goalPace`) compares the rate still required to hit the short-term target,
+  `(target − current) / weeks_left`, against your **recent** best-to-date max-weight rate
+  (`recentRatePerWeek`, ~8-week window) → `ahead` / `on track` / `behind` / `met`.
+- **Goal-aware next session:** when a target is set, the suggestion engine adds `goalPace` and one
+  *bounded* behavioral tweak — if you're **behind** pace and only *mildly* stalled (still in the
+  rep range, e1RM flat), it pushes one more rep instead of inserting a soft deload. It never
+  invents larger jumps or removes a genuine below-range deload; progressive overload still happens
+  one safe plate/rep at a time.
+
 ## Updating your data
 
 ### Automatic sync via iCloud Drive (recommended, macOS)
@@ -204,7 +228,7 @@ npm install
 npm run dev      # http://localhost:5173
 npm run build    # production build into dist/ (also the type-check gate)
 npm run preview  # preview the production build
-npm run test     # Vitest unit tests (suggestion logic)
+npm run test     # Vitest unit tests (suggestion + goals logic)
 ```
 
 ## Project structure
@@ -216,19 +240,23 @@ src/
   lib/
     types.ts                 the four LIFTS (BP/SQ/DL/OHP) + row/session types
     parse.ts                 CSV → typed SetRow[] (Epley e1RM, warmup flag, optional RPE)
-    metrics.ts               e1RM / max-weight series, PRs, Big-4, volume, frequency, suggestions
+    metrics.ts               e1RM / max-weight series, PRs, Big-4, volume, frequency, suggestions, goals
     metrics.suggestion.test.ts  Vitest coverage of the next-session branching
+    goals.test.ts            Vitest coverage of recommended goals + goal-aware suggestions
     format.ts                date / kg / tonnage display helpers
     theme.ts                 the selectable UI themes (dark / light / cozy)
     mode.ts                  metric mode (est. 1RM vs. actual max weight)
+    goals.ts                 goal horizons (3/6/12 mo) + GoalMap persistence helpers
   hooks/
     useTheme.ts              reads/writes the active theme (data-theme + localStorage)
     useMetricMode.ts         reads/writes the active metric mode (localStorage)
+    useGoals.ts              reads/writes per-lift max-weight goals (localStorage)
   components/
-    Dashboard.tsx            page layout, composes everything
+    Dashboard.tsx            page layout; computes goal-aware suggestions once, passes them down
     StatCards.tsx            Big-4 total + per-lift PR cards
     LatestWorkout.tsx        most recent session in full (always expanded)
-    NextSession.tsx          per-lift load × reps suggestion (prev → target chips)
+    NextSession.tsx          per-lift load × reps suggestion (prev → target chips) + pace chip
+    Roadmap.tsx              editable 3/6/12-month goal timeline + progress / pace
     SetChip.tsx              shared "weight kg × reps ×count" pill + groupSets
     ProgressChart.tsx        headline chart (+ dotted goal projection); est. 1RM ⇄ max weight
     VolumeChart.tsx          weekly stacked tonnage bars
