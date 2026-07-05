@@ -72,10 +72,15 @@ The `StatCards` per-lift "current PR" figure still comes from `cumulativeSeries`
 drawn to a synthetic future date; tooltips ignore any `__p` dataKey.
 
 `Suggestion` (from `nextSessionSuggestion`) is structured, not a headline string: it carries
-the `prev` top set, target `load/reps/sets`, per-field deltas, and the projections. `NextSession`
-builds the **full ordered set list** for each lift via `sessionPlan(suggestion)` in `metrics.ts`
-(pure): `warmupRamp(workLoad)` (empty bar → ~50/70/85 % ramp, snapped to the plate, only sets
-lighter than the working load) → the working sets → the heavy `topSet`.
+the `prev` top set, target `load/reps/sets`, per-field deltas, and the projections. The routine
+has a fixed **baseline shape — 2–3 warmup sets, 3 main working sets, 1 heavy top set**
+(`config.workingSets = 3` in `DEFAULT_SUGGESTION_CONFIG`) — that flexes per situation: a deload
+trims the *actual last-logged* set count by `deloadSetFactor` (not the baseline — a deload eases
+off from what you really did), and the top set is omitted whenever it wouldn't be heavier than the
+working set or on a deload/return. `NextSession` builds the **full ordered set list** for each lift
+via `sessionPlan(suggestion)` in `metrics.ts` (pure): `warmupRamp(workLoad)` (empty bar → ~60/85 %
+ramp, snapped to the plate, only sets lighter than the working load — collapses to 2 sets for a
+light load) → the working sets → the heavy `topSet`.
 `PlanSet { kind: 'warmup' | 'work' | 'top'; weight; reps }`. It renders in the **same compact
 format as `LatestWorkout`** — a header (color chip + label, pace/action tags) plus one wrapping row
 of `groupSets`-collapsed `SetChip` pills (W-prefixed warmups, then working, then a `top` divider +

@@ -406,7 +406,8 @@ export interface SuggestionConfig {
   loadIncrement: number // smallest plate jump, kg
   stagnationWindow: number // sessions inspected for the e1RM plateau check
   belowRangeRepeat: number // consecutive below-range sessions that trigger a deload
-  deloadSetFactor: number // fraction of working sets kept on a deload
+  workingSets: number // baseline number of main working sets per session
+  deloadSetFactor: number // fraction of the baseline working sets kept on a deload
   topSetIntensity: number // fraction of e1RM for the heavy specificity top set (Size Principle)
   detraining: {
     graceWeeks: number // gap tolerated before any strength loss is assumed
@@ -415,12 +416,16 @@ export interface SuggestionConfig {
   }
 }
 
+// Baseline routine shape: 2–3 warmup sets (see warmupRamp), 3 main working
+// sets, 1 heavy top set — trimmed on a deload or omitted where noted (see
+// README "How suggestions work").
 export const DEFAULT_SUGGESTION_CONFIG: SuggestionConfig = {
   repRange: [6, 10],
   repRangeByLift: {},
   loadIncrement: 2.5,
   stagnationWindow: 3,
   belowRangeRepeat: 2,
+  workingSets: 3,
   deloadSetFactor: 0.5,
   topSetIntensity: 0.9,
   detraining: { graceWeeks: 2, tauWeeks: 10, minRetention: 0.7 },
@@ -620,6 +625,8 @@ export function latestTs(rows: SetRow[]): number {
 }
 
 function deloadSuggestion(lift: LiftKey, last: TopSet, config: SuggestionConfig, why: string): Suggestion {
+  // Cut from what was *actually* done last time, not the idealized baseline —
+  // a deload is a deviation from your real recent volume, not a recomputed plan.
   const sets = Math.max(1, Math.round(last.sets * config.deloadSetFactor))
   const prev: TopSetSummary = { load: last.load, reps: last.reps, sets: last.sets }
   return buildSuggestion(
@@ -665,7 +672,7 @@ function suggestForLift(
   const prev: TopSetSummary = { load: last.load, reps: last.reps, sets: last.sets }
   const [lo, hi] = config.repRangeByLift[lift] ?? config.repRange
   const inc = config.loadIncrement
-  const sets = Math.max(1, last.sets)
+  const sets = config.workingSets // baseline main-set count for progression/hold/return
   const stagnant = isStagnant(tops, config.stagnationWindow)
 
   // Goal pace vs. the short-term max-weight target, if one is set. Goal fields are
@@ -821,18 +828,18 @@ export interface PlanSet {
   reps: number
 }
 
-// A progressive warmup ramp up to `workLoad`: an empty-bar set, then a few sets
-// at ~50/70/85 % of the working load with descending reps. Weights snap to the
-// plate increment and only sets strictly lighter than the working load (and
-// strictly increasing) are kept — no redundant or heavier "warmups". Returns an
-// empty ramp for loads at or below the bar (nothing to ramp through).
+// A progressive warmup ramp up to `workLoad`: an empty-bar set, then ~60 % and
+// ~85 % of the working load with descending reps — 2–3 sets as a baseline
+// (light loads collapse to 2 or fewer once a step would be redundant with the
+// bar or the working load). Weights snap to the plate increment and only sets
+// strictly lighter than the working load (and strictly increasing) are kept.
+// Returns an empty ramp for loads at or below the bar (nothing to ramp through).
 export function warmupRamp(workLoad: number, plate = 2.5, bar = 20): PlanSet[] {
   if (!(workLoad > bar)) return []
   const snap = (w: number) => Math.round(w / plate) * plate
   const steps: Array<{ w: number; reps: number }> = [
     { w: bar, reps: 5 },
-    { w: snap(0.5 * workLoad), reps: 5 },
-    { w: snap(0.7 * workLoad), reps: 3 },
+    { w: snap(0.6 * workLoad), reps: 3 },
     { w: snap(0.85 * workLoad), reps: 2 },
   ]
   const ramp: PlanSet[] = []
@@ -846,10 +853,12 @@ export function warmupRamp(workLoad: number, plate = 2.5, bar = 20): PlanSet[] {
   return ramp
 }
 
-// The complete, ordered set list for a suggestion — warmup ramp → each working
-// set (expanded, not collapsed) → the heavy specificity top set(s). Empty when
-// there's no history to prescribe from. Pure: derived entirely from the
-// Suggestion, so the card renders every set the session calls for.
+// The complete, ordered set list for a suggestion — warmup ramp → the working
+// sets → the heavy specificity top set. Baseline shape is 2–3 warmup sets, 3
+// working sets, 1 top set; a deload trims the working sets and drops the top
+// set, same as `return`. Empty when there's no history to prescribe from. Pure:
+// derived entirely from the Suggestion, so the card renders every set the
+// session calls for.
 export function sessionPlan(s: Suggestion, config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG): PlanSet[] {
   if (s.action === 'insufficient-data' || s.sets <= 0) return []
   const plan: PlanSet[] = warmupRamp(s.load, config.loadIncrement)

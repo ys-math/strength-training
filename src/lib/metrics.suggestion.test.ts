@@ -48,6 +48,13 @@ describe('nextSessionSuggestion — double progression', () => {
     expect(s.projectedE1rm).toBe(epley(62.5, 6)) // 75
   })
 
+  it('targets the 3-set baseline regardless of how many sets were actually logged last time', () => {
+    const rows = session('2026-01-01', 'BP', 60, 8, 2) // only 2 sets logged
+    const s = nextSessionSuggestion(rows).BP
+    expect(s.sets).toBe(3) // baseline, not a copy of last session's count
+    expect(s.prev).toEqual({ load: 60, reps: 8, sets: 2 }) // prev still reports what actually happened
+  })
+
   it('holds load and adds a rep when reps are within range but not at the top', () => {
     const rows = session('2026-01-01', 'BP', 60, 8, 3)
     const s = nextSessionSuggestion(rows).BP
@@ -169,12 +176,20 @@ describe('nextSessionSuggestion — detraining / reversibility', () => {
 })
 
 describe('warmupRamp', () => {
-  it('ramps empty bar → ~50/70/85 %, strictly increasing and lighter than the work load', () => {
+  it('ramps empty bar → ~60/85 %, a 2–3 set baseline, strictly increasing and lighter than the work load', () => {
     const ramp = warmupRamp(100)
-    expect(ramp.map((s) => s.weight)).toEqual([20, 50, 70, 85])
-    expect(ramp.map((s) => s.reps)).toEqual([5, 5, 3, 2])
+    expect(ramp.map((s) => s.weight)).toEqual([20, 60, 85])
+    expect(ramp.map((s) => s.reps)).toEqual([5, 3, 2])
     expect(ramp.every((s) => s.kind === 'warmup')).toBe(true)
+    expect(ramp.length).toBeGreaterThanOrEqual(2)
+    expect(ramp.length).toBeLessThanOrEqual(3)
     for (const s of ramp) expect(s.weight).toBeLessThan(100)
+  })
+
+  it('collapses toward 2 sets for a light working load', () => {
+    const ramp = warmupRamp(27.5)
+    expect(ramp.length).toBeLessThanOrEqual(2)
+    for (const s of ramp) expect(s.weight).toBeLessThan(27.5)
   })
 
   it('is empty at or below the bar (nothing to ramp through)', () => {

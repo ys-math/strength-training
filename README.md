@@ -107,11 +107,15 @@ $(x)^+ = \max(x, 0)$.
    engine as if they were settled law.
 
 **The full plan.** The card isn't just the target working set — it lays out the whole session in
-order as set chips: a **warmup ramp** (empty bar, then ≈ 50 / 70 / 85 % of the working load with
-descending reps, each snapped to the nearest plate and skipped once it would meet the working load),
-then the **working sets**, then the heavy top set. Identical sets collapse to one `weight × reps
-×count` chip (same style as Latest workout). The warmup is a conventional ramp for joint prep and
-rehearsal, not part of the progression logic — it carries no training-effect claim.
+order as set chips, with a fixed **baseline shape: 2–3 warmup sets, 3 main working sets, and 1 heavy
+top set.** That baseline flexes with the situation — a deload trims the working-set count (and drops
+the top set), and the top set is likewise omitted whenever it wouldn't be heavier than the working
+set. The **warmup ramp** is an empty-bar set, then ≈ 60 % and ≈ 85 % of the working load with
+descending reps, each snapped to the nearest plate and skipped once it would be redundant with the
+bar or the working load — so a light working load collapses the ramp to 2 sets or fewer. Identical
+sets collapse to one `weight × reps ×count` chip (same style as Latest workout). The warmup is a
+conventional ramp for joint prep and rehearsal, not part of the progression logic — it carries no
+training-effect claim.
 
 ## How goals work
 
