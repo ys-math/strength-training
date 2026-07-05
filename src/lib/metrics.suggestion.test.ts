@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { epley } from './parse'
 import type { LiftKey, SetRow } from './types'
-import { nextSessionSuggestion, hasRpeData } from './metrics'
+import { nextSessionSuggestion, hasRpeData, sessionPlan, warmupRamp } from './metrics'
 
 let order = 0
 
@@ -165,6 +165,57 @@ describe('nextSessionSuggestion — detraining / reversibility', () => {
     const s = nextSessionSuggestion(rows, undefined, undefined, now).BP
     expect(s.action).not.toBe('return')
     expect(s.load).toBe(60)
+  })
+})
+
+describe('warmupRamp', () => {
+  it('ramps empty bar → ~50/70/85 %, strictly increasing and lighter than the work load', () => {
+    const ramp = warmupRamp(100)
+    expect(ramp.map((s) => s.weight)).toEqual([20, 50, 70, 85])
+    expect(ramp.map((s) => s.reps)).toEqual([5, 5, 3, 2])
+    expect(ramp.every((s) => s.kind === 'warmup')).toBe(true)
+    for (const s of ramp) expect(s.weight).toBeLessThan(100)
+  })
+
+  it('is empty at or below the bar (nothing to ramp through)', () => {
+    expect(warmupRamp(20)).toEqual([])
+    expect(warmupRamp(15)).toEqual([])
+  })
+})
+
+describe('sessionPlan', () => {
+  const now = new Date('2026-01-01T09:00:00').getTime()
+
+  it('lays out warmup ramp → each working set (expanded) → the heavy top set, in order', () => {
+    const rows = session('2026-01-01', 'BP', 60, 8, 3) // add-rep → 60×9 ×3, with a top set
+    const s = nextSessionSuggestion(rows, undefined, undefined, now).BP
+    const plan = sessionPlan(s)
+    const kinds = plan.map((p) => p.kind)
+    // warmups first, then exactly `sets` work sets, then the top set — never interleaved.
+    expect(kinds.filter((k) => k === 'work')).toHaveLength(s.sets)
+    expect(kinds.slice(0, kinds.indexOf('work')).every((k) => k === 'warmup')).toBe(true)
+    expect(kinds[kinds.length - 1]).toBe('top')
+    const work = plan.filter((p) => p.kind === 'work')
+    for (const w of work) expect(w).toMatchObject({ weight: s.load, reps: s.reps })
+    expect(plan.filter((p) => p.kind === 'top')[0]).toMatchObject({
+      weight: s.topSet!.load,
+      reps: s.topSet!.reps,
+    })
+  })
+
+  it('omits the top set on a deload but still ramps + expands the working sets', () => {
+    const rows = [...session('2026-01-01', 'BP', 60, 4, 3), ...session('2026-01-03', 'BP', 60, 5, 3)]
+    const s = nextSessionSuggestion(rows, undefined, undefined, now).BP
+    const plan = sessionPlan(s)
+    expect(s.action).toBe('deload')
+    expect(plan.some((p) => p.kind === 'top')).toBe(false)
+    expect(plan.filter((p) => p.kind === 'work')).toHaveLength(s.sets)
+  })
+
+  it('is empty when there is no history to prescribe from', () => {
+    const s = nextSessionSuggestion(session('2026-01-01', 'BP', 60, 8, 3), undefined, undefined, now).SQ
+    expect(s.action).toBe('insufficient-data')
+    expect(sessionPlan(s)).toEqual([])
   })
 })
 

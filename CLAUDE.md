@@ -73,7 +73,11 @@ drawn to a synthetic future date; tooltips ignore any `__p` dataKey.
 
 `Suggestion` (from `nextSessionSuggestion`) is structured, not a headline string: it carries
 the `prev` top set, target `load/reps/sets`, per-field deltas, and the projections. `NextSession`
-and `LatestWorkout` share the `SetChip` / `groupSets` pill from `components/SetChip.tsx`.
+renders the **full ordered set list** for each lift via `sessionPlan(suggestion)` in `metrics.ts`
+(pure): `warmupRamp(workLoad)` (empty bar → ~50/70/85 % ramp, snapped to the plate, only sets
+lighter than the working load) → each working set expanded (not collapsed) → the heavy `topSet`.
+`PlanSet { kind: 'warmup' | 'work' | 'top'; weight; reps }`. `NextSession` and `LatestWorkout`
+share the `SetChip` / `groupSets` pill from `components/SetChip.tsx`.
 
 ### Goals (drawn on the chart)
 

@@ -810,6 +810,56 @@ export function nextSessionSuggestion(
   return result
 }
 
+// ---- Session plan: the full ordered set list for the next session ------------
+
+export type PlanSetKind = 'warmup' | 'work' | 'top'
+
+// One prescribed set in the next-session plan.
+export interface PlanSet {
+  kind: PlanSetKind
+  weight: number
+  reps: number
+}
+
+// A progressive warmup ramp up to `workLoad`: an empty-bar set, then a few sets
+// at ~50/70/85 % of the working load with descending reps. Weights snap to the
+// plate increment and only sets strictly lighter than the working load (and
+// strictly increasing) are kept — no redundant or heavier "warmups". Returns an
+// empty ramp for loads at or below the bar (nothing to ramp through).
+export function warmupRamp(workLoad: number, plate = 2.5, bar = 20): PlanSet[] {
+  if (!(workLoad > bar)) return []
+  const snap = (w: number) => Math.round(w / plate) * plate
+  const steps: Array<{ w: number; reps: number }> = [
+    { w: bar, reps: 5 },
+    { w: snap(0.5 * workLoad), reps: 5 },
+    { w: snap(0.7 * workLoad), reps: 3 },
+    { w: snap(0.85 * workLoad), reps: 2 },
+  ]
+  const ramp: PlanSet[] = []
+  let prev = 0
+  for (const st of steps) {
+    if (st.w > prev && st.w < workLoad) {
+      ramp.push({ kind: 'warmup', weight: st.w, reps: st.reps })
+      prev = st.w
+    }
+  }
+  return ramp
+}
+
+// The complete, ordered set list for a suggestion — warmup ramp → each working
+// set (expanded, not collapsed) → the heavy specificity top set(s). Empty when
+// there's no history to prescribe from. Pure: derived entirely from the
+// Suggestion, so the card renders every set the session calls for.
+export function sessionPlan(s: Suggestion, config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG): PlanSet[] {
+  if (s.action === 'insufficient-data' || s.sets <= 0) return []
+  const plan: PlanSet[] = warmupRamp(s.load, config.loadIncrement)
+  for (let i = 0; i < s.sets; i++) plan.push({ kind: 'work', weight: s.load, reps: s.reps })
+  if (s.topSet) {
+    for (let i = 0; i < s.topSet.sets; i++) plan.push({ kind: 'top', weight: s.topSet.load, reps: s.topSet.reps })
+  }
+  return plan
+}
+
 // ---- Goals: recommended targets, progress pace -------------------------------
 
 export interface GoalConfig {

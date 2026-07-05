@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { hasRpeData, type GoalPace, type Suggestion } from '../lib/metrics'
+import { hasRpeData, sessionPlan, type GoalPace, type PlanSet, type Suggestion } from '../lib/metrics'
 import { LIFTS, type LiftKey, type SetRow } from '../lib/types'
 import ChartCard from './ChartCard'
 import SetChip from './SetChip'
@@ -57,6 +57,59 @@ function DeltaBadge({ s }: { s: Suggestion }) {
   )
 }
 
+// The label in the left-hand marker column: warmups read "W", working sets are
+// numbered 1..n, the heavy top set reads "Top".
+function markerLabel(set: PlanSet, workIndex: number): string {
+  if (set.kind === 'warmup') return 'W'
+  if (set.kind === 'top') return 'Top'
+  return String(workIndex)
+}
+
+// One row of the ordered session plan: a marker chip + the weight × reps pill.
+function PlanRow({ set, workIndex, showTopNote }: { set: PlanSet; workIndex: number; showTopNote: boolean }) {
+  const isWork = set.kind === 'work'
+  const isTop = set.kind === 'top'
+  return (
+    <div className="flex items-center gap-2">
+      <span
+        className="inline-flex h-4 w-7 shrink-0 items-center justify-center rounded text-[10px] font-semibold tabular-nums"
+        style={{
+          border: '1px solid var(--border)',
+          color: isWork ? 'var(--text-secondary)' : 'var(--text-muted)',
+          background: isTop ? 'var(--page)' : 'transparent',
+        }}
+      >
+        {markerLabel(set, workIndex)}
+      </span>
+      <SetChip g={{ weight: set.weight, reps: set.reps, count: 1 }} warmup={set.kind === 'warmup'} />
+      {showTopNote && (
+        <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+          specificity (~90% e1RM)
+        </span>
+      )}
+    </div>
+  )
+}
+
+// The full ordered set list for a lift's next session: warmup ramp → each
+// working set → the heavy top set.
+function SessionPlan({ s }: { s: Suggestion }) {
+  const plan = useMemo(() => sessionPlan(s), [s])
+  if (plan.length === 0) return null
+  let work = 0
+  let topSeen = false
+  return (
+    <div className="mt-2 space-y-1">
+      {plan.map((set, i) => {
+        if (set.kind === 'work') work += 1
+        const firstTop = set.kind === 'top' && !topSeen
+        if (set.kind === 'top') topSeen = true
+        return <PlanRow key={i} set={set} workIndex={work} showTopNote={firstTop} />
+      })}
+    </div>
+  )
+}
+
 export default function NextSession({
   rows,
   suggestions,
@@ -69,7 +122,7 @@ export default function NextSession({
   return (
     <ChartCard
       title="Next session"
-      subtitle="Suggested load × reps per lift — double progression from your history"
+      subtitle="Full set-by-set plan per lift — warmup ramp, working sets, and heavy top set"
     >
       <div className="space-y-2">
         {LIFTS.map((lift) => {
@@ -101,33 +154,21 @@ export default function NextSession({
               </div>
 
               {!noData && (
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <>
                   {s.prev && (
-                    <>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                      <span style={{ color: 'var(--text-muted)' }}>last</span>
                       <SetChip g={{ weight: s.prev.load, reps: s.prev.reps, count: s.prev.sets }} dim />
-                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        →
-                      </span>
-                    </>
+                      <span style={{ color: 'var(--text-muted)' }}>→</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>plan</span>
+                      <DeltaBadge s={s} />
+                    </div>
                   )}
-                  <SetChip g={{ weight: s.load, reps: s.reps, count: s.sets }} />
-                  <DeltaBadge s={s} />
-                </div>
+                  <SessionPlan s={s} />
+                </>
               )}
 
-              {s.topSet && (
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>
-                    + heavy top set
-                  </span>
-                  <SetChip g={{ weight: s.topSet.load, reps: s.topSet.reps, count: s.topSet.sets }} />
-                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                    specificity (~90% e1RM)
-                  </span>
-                </div>
-              )}
-
-              <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="mt-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                 {s.rationale}
               </div>
             </div>
