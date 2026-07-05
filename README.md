@@ -22,10 +22,11 @@ CSV export. Modern dark UI, deployed free on GitHub Pages.
   chart (see [How goals work](#how-goals-work)).
 - **PR cards** — the PR in the active metric and a from-previous-PR delta.
 - **Latest workout** — the most recent session in full: every exercise, set, and volume, as chips.
-- **Next session** — a **full, ordered set-by-set plan** per lift: a warmup ramp, every working set
-  (expanded, not collapsed), and a **heavy top set** for max-strength specificity — with the change
-  vs. last time highlighted, an automatic **back-off after a layoff**, and a goal-pace chip (see
-  [How suggestions work](#how-suggestions-work) and [the theory → formula map](#the-science-theory--formula-map)).
+- **Next session** — a **full, ordered plan** per lift shown as set chips (same compact style as
+  Latest workout): a warmup ramp, the working sets, and a **heavy top set** for max-strength
+  specificity — with the change vs. last time highlighted, an automatic **back-off after a layoff**,
+  and a goal-pace chip (see [How suggestions work](#how-suggestions-work) and
+  [the theory → formula map](#the-science-theory--formula-map)).
 - **Weekly volume** — working tonnage (weight × reps), warmup sets excluded.
 - **Training frequency** — GitHub-style calendar heatmap of working sets per day.
 - **Per-lift detail** — est. 1RM vs. heaviest set for any single lift.
@@ -65,9 +66,9 @@ $(x)^+ = \max(x, 0)$.
    synchronization** say the highest-threshold (strongest) motor units are only recruited at
    near-maximal force — moderate-rep accumulation alone leaves them under-trained. The target
    load is $L_{\mathrm{top}} = \lfloor I\,E \rceil_{\Delta}$ with intensity $I = 0.90$, and the reps come
-   from inverting Epley: $E = L\!\left(1 + \tfrac{r}{30}\right) \Rightarrow r = 30\!\left(\tfrac{1}{I} - 1\right) \approx 3$. It's the last row
-   of the plan and is omitted when it wouldn't be heavier than your working set (you're already
-   training heavy enough) or on a deload/return.
+   from inverting Epley: $E = L\!\left(1 + \tfrac{r}{30}\right) \Rightarrow r = 30\!\left(\tfrac{1}{I} - 1\right) \approx 3$. It's the last chip
+   in the plan (after a `top` label) and is omitted when it wouldn't be heavier than your working
+   set (you're already training heavy enough) or on a deload/return.
 
 3. **Detraining back-off** — if it's been a while since you last trained a lift, the next
    suggestion **reduces the load** and flags a *return* session instead of chasing a PR on
@@ -106,10 +107,11 @@ $(x)^+ = \max(x, 0)$.
    engine as if they were settled law.
 
 **The full plan.** The card isn't just the target working set — it lays out the whole session in
-order: a **warmup ramp** (empty bar, then ≈ 50 / 70 / 85 % of the working load with descending reps,
-each snapped to the nearest plate and skipped once it would meet the working load), then **every
-working set** listed individually, then the heavy top set. The warmup is a conventional ramp for
-joint prep and rehearsal, not part of the progression logic — it carries no training-effect claim.
+order as set chips: a **warmup ramp** (empty bar, then ≈ 50 / 70 / 85 % of the working load with
+descending reps, each snapped to the nearest plate and skipped once it would meet the working load),
+then the **working sets**, then the heavy top set. Identical sets collapse to one `weight × reps
+×count` chip (same style as Latest workout). The warmup is a conventional ramp for joint prep and
+rehearsal, not part of the progression logic — it carries no training-effect claim.
 
 ## How goals work
 

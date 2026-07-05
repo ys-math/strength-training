@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
-import { hasRpeData, sessionPlan, type GoalPace, type PlanSet, type Suggestion } from '../lib/metrics'
+import { hasRpeData, sessionPlan, type GoalPace, type Suggestion } from '../lib/metrics'
 import { LIFTS, type LiftKey, type SetRow } from '../lib/types'
 import ChartCard from './ChartCard'
-import SetChip from './SetChip'
+import SetChip, { groupSets } from './SetChip'
 
 // Short tag for the suggestion's action, so the intent reads at a glance.
 const ACTION_LABEL: Record<string, string> = {
@@ -57,55 +57,34 @@ function DeltaBadge({ s }: { s: Suggestion }) {
   )
 }
 
-// The label in the left-hand marker column: warmups read "W", working sets are
-// numbered 1..n, the heavy top set reads "Top".
-function markerLabel(set: PlanSet, workIndex: number): string {
-  if (set.kind === 'warmup') return 'W'
-  if (set.kind === 'top') return 'Top'
-  return String(workIndex)
-}
-
-// One row of the ordered session plan: a marker chip + the weight × reps pill.
-function PlanRow({ set, workIndex, showTopNote }: { set: PlanSet; workIndex: number; showTopNote: boolean }) {
-  const isWork = set.kind === 'work'
-  const isTop = set.kind === 'top'
-  return (
-    <div className="flex items-center gap-2">
-      <span
-        className="inline-flex h-4 w-7 shrink-0 items-center justify-center rounded text-[10px] font-semibold tabular-nums"
-        style={{
-          border: '1px solid var(--border)',
-          color: isWork ? 'var(--text-secondary)' : 'var(--text-muted)',
-          background: isTop ? 'var(--page)' : 'transparent',
-        }}
-      >
-        {markerLabel(set, workIndex)}
-      </span>
-      <SetChip g={{ weight: set.weight, reps: set.reps, count: 1 }} warmup={set.kind === 'warmup'} />
-      {showTopNote && (
-        <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-          specificity (~90% e1RM)
-        </span>
-      )}
-    </div>
-  )
-}
-
-// The full ordered set list for a lift's next session: warmup ramp → each
-// working set → the heavy top set.
-function SessionPlan({ s }: { s: Suggestion }) {
+// The set chips for a lift's next session, in execution order — warmup ramp,
+// working sets, heavy top set — grouped like the Latest-workout card so identical
+// sets collapse to one "weight × reps ×count" pill.
+function PlanChips({ s }: { s: Suggestion }) {
   const plan = useMemo(() => sessionPlan(s), [s])
   if (plan.length === 0) return null
-  let work = 0
-  let topSeen = false
+  const warmups = groupSets(plan.filter((p) => p.kind === 'warmup'))
+  const working = groupSets(plan.filter((p) => p.kind === 'work'))
+  const top = groupSets(plan.filter((p) => p.kind === 'top'))
   return (
-    <div className="mt-2 space-y-1">
-      {plan.map((set, i) => {
-        if (set.kind === 'work') work += 1
-        const firstTop = set.kind === 'top' && !topSeen
-        if (set.kind === 'top') topSeen = true
-        return <PlanRow key={i} set={set} workIndex={work} showTopNote={firstTop} />
-      })}
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      {warmups.map((g, i) => (
+        <SetChip key={`w${i}`} g={g} warmup />
+      ))}
+      {working.map((g, i) => (
+        <SetChip key={`k${i}`} g={g} />
+      ))}
+      {top.length > 0 && (
+        <>
+          <span className="mx-0.5 text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+            top
+          </span>
+          {top.map((g, i) => (
+            <SetChip key={`t${i}`} g={g} />
+          ))}
+        </>
+      )}
+      <DeltaBadge s={s} />
     </div>
   )
 }
@@ -153,24 +132,13 @@ export default function NextSession({
                 </div>
               </div>
 
-              {!noData && (
-                <>
-                  {s.prev && (
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
-                      <span style={{ color: 'var(--text-muted)' }}>last</span>
-                      <SetChip g={{ weight: s.prev.load, reps: s.prev.reps, count: s.prev.sets }} dim />
-                      <span style={{ color: 'var(--text-muted)' }}>→</span>
-                      <span style={{ color: 'var(--text-secondary)' }}>plan</span>
-                      <DeltaBadge s={s} />
-                    </div>
-                  )}
-                  <SessionPlan s={s} />
-                </>
+              {noData ? (
+                <div className="mt-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  Not enough history yet.
+                </div>
+              ) : (
+                <PlanChips s={s} />
               )}
-
-              <div className="mt-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                {s.rationale}
-              </div>
             </div>
           )
         })}

@@ -1,5 +1,3 @@
-import type { SetDetail } from '../lib/metrics'
-
 export interface SetGroup {
   weight: number
   reps: number
@@ -7,8 +5,10 @@ export interface SetGroup {
 }
 
 // Collapse consecutive identical sets into one "weight × reps ×count" group, so a
-// run of three matching working sets reads as one chip instead of three.
-export function groupSets(sets: SetDetail[]): SetGroup[] {
+// run of three matching working sets reads as one chip instead of three. Typed to
+// the minimum it reads, so both logged sets (SetDetail) and planned sets (PlanSet)
+// can be grouped.
+export function groupSets(sets: Array<{ weight: number; reps: number }>): SetGroup[] {
   const groups: SetGroup[] = []
   for (const s of sets) {
     const last = groups[groups.length - 1]
