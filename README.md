@@ -33,7 +33,7 @@ CSV export. Modern dark UI, deployed free on GitHub Pages.
 - **Session log** — every exercise, set, and volume per workout.
 - **Themes** — switch between Modern Dark, Modern Light, and Cozy; your choice is remembered.
 
-Estimated 1RM uses the Epley formula $E = w\!\left(1 + \dfrac{r}{30}\right)$, for weight $w$ and reps $r$.
+Estimated 1RM uses the Epley formula $E = w\left(1 + \dfrac{r}{30}\right)$, for weight $w$ and reps $r$.
 
 ## How suggestions work
 
@@ -45,11 +45,11 @@ it's an admitted heuristic. The main chart draws the same goal as a **dotted lin
 lift's last point to where it would land next session if the goal is met (the suggestion also
 carries `projectedWeight` / `projectedE1rm` for this); a deload projects nothing.
 
-**Notation.** $E = w\!\left(1 + \tfrac{r}{30}\right)$ is the Epley estimated 1RM (weight $w$, reps $r$);
+**Notation.** $E = w\left(1 + \tfrac{r}{30}\right)$ is the Epley estimated 1RM (weight $w$, reps $r$);
 $L$ is the top working-set load and $\Delta = 2.5\,\mathrm{kg}$ the smallest plate; $I = L/E$ is relative
 intensity and $[r_{\min}, r_{\max}]$ the rep window (default $[6, 10]$); $g$ is the number of weeks since
 a lift was last trained. Two helpers used below: $\lfloor x \rceil_{\Delta} = \Delta\left\lfloor x/\Delta \right\rceil$
-rounds $x$ to the nearest plate, $\mathrm{clamp}(x; a, b) = \min\!\big(\max(x, a),\, b\big)$, and
+rounds $x$ to the nearest plate, $\mathrm{clamp}(x; a, b) = \min\big(\max(x, a),\, b\big)$, and
 $(x)^+ = \max(x, 0)$.
 
 1. **Double progression** — add reps within a rep window (default 6–10), then add the
@@ -66,7 +66,7 @@ $(x)^+ = \max(x, 0)$.
    synchronization** say the highest-threshold (strongest) motor units are only recruited at
    near-maximal force — moderate-rep accumulation alone leaves them under-trained. The target
    load is $L_{\mathrm{top}} = \lfloor I\,E \rceil_{\Delta}$ with intensity $I = 0.90$, and the reps come
-   from inverting Epley: $E = L\!\left(1 + \tfrac{r}{30}\right) \Rightarrow r = 30\!\left(\tfrac{1}{I} - 1\right) \approx 3$. It's the last chip
+   from inverting Epley: $E = L\left(1 + \tfrac{r}{30}\right) \Rightarrow r = 30\left(\tfrac{1}{I} - 1\right) \approx 3$. It's the last chip
    in the plan (after a `top` label) and is omitted when it wouldn't be heavier than your working
    set (you're already training heavy enough) or on a deload/return.
 
@@ -74,7 +74,7 @@ $(x)^+ = \max(x, 0)$.
    suggestion **reduces the load** and flags a *return* session instead of chasing a PR on
    detrained tissue. This is **reversibility** (loss of adaptation with time off), which is
    very well documented. With grace $g_0 = 2$ and time-constant $\tau = 10$ (weeks), the retention factor is
-   $R(g) = \max\!\big(0.70,\ e^{-(g - g_0)^+/\tau}\big)$ — so $R = 1$ until the grace period lapses — and the
+   $R(g) = \max\big(0.70,\ e^{-(g - g_0)^+/\tau}\big)$ — so $R = 1$ until the grace period lapses — and the
    suggested load is $L' = \lfloor R(g)\,L \rceil_{\Delta}$. Example: $g = 4 \Rightarrow R = e^{-0.2} \approx 0.82$,
    so a 60 kg lift eases to $\lfloor 0.82 \times 60 \rceil_{\Delta} = 50\,\mathrm{kg}$. The $0.70$ floor caps the back-off (we
    never assume you lost more than ~30 %), and the decay constant is a deliberately
@@ -136,20 +136,20 @@ is nothing to edit and nothing is stored.
   — ≈ 8 % in one quarter, 15 % over two, 25 % over a year — so a hot 8-week streak can’t project to
   an absurd number. Results are snapped to 2.5 kg and forced strictly increasing. For horizon $h$ with
   current max $c$, decayed rate projection $p_h$, and floor/cap fractions $\phi_h,\kappa_h$:
-  $\;\mathrm{gain}_h = \mathrm{clamp}\!\big(p_h\,\psi\,\sigma;\ \phi_h\,c,\ \kappa_h\,c\big)$, with
+  $\mathrm{gain}_h = \mathrm{clamp}\big(p_h\,\psi\,\sigma;\ \phi_h\,c,\ \kappa_h\,c\big)$, with
   $\phi = (0.03,\,0.05,\,0.08)$ and $\kappa = (0.08,\,0.15,\,0.25)$. Treat them as a **rough guide, not a promise**.
 - **Neural-phase factor** $\psi$ (`neuralFactor`) — early strength gains are largely **neural**
   (better recruitment/rate coding), and these come fast; later gains lean on slower **structural**
   change, so trainees decelerate with experience. With logged training age $A$ (weeks from first to
   last session), grace $A_0 = 12$ and time-constant $\tau_n = 40$ (weeks), we scale the projected gain by
-  $\psi = \max\!\big(0.55,\ e^{-(A - A_0)^+/\tau_n}\big)$. A novice keeps $\psi \approx 1$; a long-history
+  $\psi = \max\big(0.55,\ e^{-(A - A_0)^+/\tau_n}\big)$. A novice keeps $\psi \approx 1$; a long-history
   lifter is pulled toward the $0.55$ floor. **Caveat:** $A$ only counts training *in the export*, so it
   under-estimates true training age — treat $\psi$ as a gentle nudge, not a verdict.
 - **Stimulus factor** $\sigma$ (`stimulusFactor`) — adaptation tracks the demand you actually impose
   (**SAID**), driven at the cellular level by **mechanical tension → mechanotransduction (mTOR)**
   and a favourable **muscle-protein synthesis/breakdown balance**, which in turn need enough
   training **frequency**. With recent frequency $f$ (sessions/week) and target $f_0 = 1.5$, we temper the
-  goal by $\sigma = \mathrm{clamp}\!\big(0.6 + 0.4\min(1,\ f/f_0);\ 0.6,\ 1\big)$. Train the lift often
+  goal by $\sigma = \mathrm{clamp}\big(0.6 + 0.4\min(1,\ f/f_0);\ 0.6,\ 1\big)$. Train the lift often
   $\Rightarrow \sigma \approx 1$ (full projected gain); train it rarely $\Rightarrow \sigma \to 0.6$.
   **Caveat:** this is single-exercise frequency, a proxy for tension dose, not a muscle-level volume prescription.
 - **Where you stand.** The **Next session** card carries a **pace** chip (`goalPace`) that compares
@@ -175,13 +175,13 @@ $\lfloor\cdot\rceil_\Delta$ nearest plate; $(x)^+ = \max(x, 0)$.
 |---|---|---|---|---|
 | **SAID / Specificity** | Adaptation is specific to the imposed demand | 1RM goal ⇒ train heavy + specific: heavy top set, and goals gated by imposed stimulus | top set at $I \approx 0.90$; $\sigma$ (below) | Near-law |
 | **Progressive Overload** | Adaptation needs a rising demand over time | Double progression on the top working set | $L' = L + \Delta,\ r' = r_{\min}$ | Most-validated principle |
-| **Reversibility / Detraining** | Adaptation is lost with time off | Back off load & flag a *return* after a layoff | $R(g)=\max\!\big(0.70,\ e^{-(g-g_0)^+/\tau}\big),\ L' = \lfloor R\,L\rceil_\Delta$ | Well documented |
-| **Size Principle (Henneman)** | Motor units recruit small→large; high-threshold units need near-max force | The heavy top set recruits the strongest units moderate reps miss | $r = 30\!\left(\tfrac{1}{I}-1\right) \approx 3$ at $I=0.90$ | Established electrophysiology |
-| **Neural Adaptation (early gains)** | Early strength is mostly neural & fast; later gains slow | Neural-phase factor shrinks *advanced* lifters' goals | $\psi=\max\!\big(0.55,\ e^{-(A-A_0)^+/\tau_n}\big)$ | Strong EMG / twitch-interpolation evidence |
+| **Reversibility / Detraining** | Adaptation is lost with time off | Back off load & flag a *return* after a layoff | $R(g)=\max\big(0.70,\ e^{-(g-g_0)^+/\tau}\big),\ L' = \lfloor R\,L\rceil_\Delta$ | Well documented |
+| **Size Principle (Henneman)** | Motor units recruit small→large; high-threshold units need near-max force | The heavy top set recruits the strongest units moderate reps miss | $r = 30\left(\tfrac{1}{I}-1\right) \approx 3$ at $I=0.90$ | Established electrophysiology |
+| **Neural Adaptation (early gains)** | Early strength is mostly neural & fast; later gains slow | Neural-phase factor shrinks *advanced* lifters' goals | $\psi=\max\big(0.55,\ e^{-(A-A_0)^+/\tau_n}\big)$ | Strong EMG / twitch-interpolation evidence |
 | **Rate Coding / MU Synchronization** | Firing rate & sync rise with heavy/max-effort work | Justifies the near-max heavy top set | shares the $I=0.90$ top set | Solid neurophysiology |
 | **MPS / MPB balance** | Net protein balance must be positive over time; each session lifts MPS ~24–48 h | Frequency feeds the stimulus factor (re-stimulate before MPS returns to baseline) | part of $\sigma$ (uses $f$) | Core biochemistry |
 | **Mechanotransduction (mTOR)** | Mechanical tension activates mTORC1 → MPS | Tension/frequency dose gates goal size | part of $\sigma$ | Strong molecular support |
-| **Mechanical Tension (primary)** | Tension is the main hypertrophy driver | Stimulus factor tempers goals when tension dose (frequency) is low | $\sigma=\mathrm{clamp}\!\big(0.6+0.4\min(1,f/f_0);\,0.6,1\big)$ | Well supported (metabolic stress / damage more debated) |
+| **Mechanical Tension (primary)** | Tension is the main hypertrophy driver | Stimulus factor tempers goals when tension dose (frequency) is low | $\sigma=\mathrm{clamp}\big(0.6+0.4\min(1,f/f_0);\,0.6,1\big)$ | Well supported (metabolic stress / damage more debated) |
 
 Two honest limits carry through the whole table: (1) we infer **training age** and **frequency**
 only from the exported log, so both are lower bounds; and (2) tension/stimulus here is
