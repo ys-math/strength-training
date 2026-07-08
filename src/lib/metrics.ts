@@ -256,13 +256,10 @@ export interface DayActivity {
   workingSets: number
 }
 
-// Working sets per day. An optional `repFilter` restricts the count to sets whose
-// reps satisfy it (used by the frequency heatmap's low-rep/high-rep view filter).
-export function dailyActivity(rows: SetRow[], repFilter?: (reps: number) => boolean): Map<string, number> {
+export function dailyActivity(rows: SetRow[]): Map<string, number> {
   const byDay = new Map<string, number>()
   for (const r of rows) {
     if (r.isWarmup) continue
-    if (repFilter && !repFilter(r.reps)) continue
     byDay.set(r.dateKey, (byDay.get(r.dateKey) ?? 0) + 1)
   }
   return byDay

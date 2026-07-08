@@ -48,7 +48,7 @@ strong_workouts.csv ?raw
   set + its reps/set-count, for the max-weight chart), `cumulativeSeries(rows, mode)` and
   `big4Series(rows, mode)` (each lift's / the summed best-to-date value, only climbs),
   `currentPrev`, `weeklyVolume` (ISO week), `dailyActivity`, `sessionDetails`, `overallStats`,
-  and `nextSessionSuggestion(rows, goalCtx?, config?, now?, dayFocus?)` (per-lift load × reps heuristic — config
+  and `nextSessionSuggestion(rows, goalCtx?, config?, now?)` (per-lift load × reps heuristic — config
   in `DEFAULT_SUGGESTION_CONFIG`, theory in README's "How suggestions work" / "theory → formula map").
   It also emits a heavy **`topSet`** (SAID/Size Principle, `heavyTopSet` at ~90% e1RM) and a
   **`'return'`** action that backs the load off after a layoff (reversibility, `retentionFactor`);
@@ -89,15 +89,6 @@ top-set pill, then the `DeltaBadge`). Both cards share `SetChip` / `groupSets` f
 and `PlanSet`). `LatestWorkout` renders warmup chips **before** the working-set chips (the order
 they're actually done in) with no divider label — the `W` prefix on each chip (from `SetChip`'s
 `warmup` prop) is identification enough.
-
-**Heatmap rep-focus filter.** A segmented toggle on the Training-frequency card (`DayFocusToggle`,
-state in `useDayFocus`/`src/lib/dayFocus.ts`, persisted like the metric mode) filters the heatmap
-grid to the days you trained **low-rep** (`'strength'`, reps ≤ `LOW_REP_MAX` = 8) or **high-rep**
-(`'volume'`, reps > 8) — `repMatchesFocus` is the predicate. `FrequencyHeatmap` passes it to
-`dailyActivity(rows, repFilter?)`, which counts only matching working sets per day; the existing
-5-bucket color scale and the tooltip's per-exercise breakdown both reflect the filtered counts.
-This is **purely a heatmap view filter** — it does *not* touch `nextSessionSuggestion` (an earlier
-version wired it into a DUP rep-window switch; that coupling was removed).
 
 ### Goals (drawn on the chart)
 

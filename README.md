@@ -28,9 +28,7 @@ CSV export. Modern dark UI, deployed free on GitHub Pages.
   and a goal-pace chip (see [How suggestions work](#how-suggestions-work) and
   [the theory → formula map](#the-science-theory--formula-map)).
 - **Weekly volume** — working tonnage (weight × reps), warmup sets excluded.
-- **Training frequency** — GitHub-style calendar heatmap of working sets per day (5-level
-  colour gradation), with a **rep-focus toggle** that filters the grid to your **low-rep
-  (≤ 8, heavy)** or **high-rep (> 8, light)** days.
+- **Training frequency** — GitHub-style calendar heatmap of working sets per day.
 - **Per-lift detail** — est. 1RM vs. heaviest set for any single lift.
 - **Session log** — every exercise, set, and volume per workout.
 - **Themes** — switch between Modern Dark, Modern Light, and Cozy; your choice is remembered.
@@ -261,12 +259,10 @@ src/
     format.ts                date / kg / tonnage display helpers
     theme.ts                 the selectable UI themes (dark / light / cozy)
     mode.ts                  metric mode (est. 1RM vs. actual max weight)
-    dayFocus.ts              heatmap rep-focus filter (low reps ≤8 / high reps >8)
     goals.ts                 goal horizons (3/6/12 mo) + fixed calendar-quarter checkpoints
   hooks/
     useTheme.ts              reads/writes the active theme (data-theme + localStorage)
     useMetricMode.ts         reads/writes the active metric mode (localStorage)
-    useDayFocus.ts           reads/writes the heatmap rep-focus filter (localStorage)
   components/
     Dashboard.tsx            page layout; computes goal-aware suggestions once, passes them down
     StatCards.tsx            Big-4 total + per-lift PR cards
@@ -276,8 +272,7 @@ src/
     ProgressChart.tsx        headline chart: dotted next-session projection, 3-mo goal lines (toggle),
                              span slider; est. 1RM ⇄ max weight
     VolumeChart.tsx          weekly stacked tonnage bars
-    FrequencyHeatmap.tsx     calendar heatmap (plain divs, not Recharts) + rep-focus filter
-    DayFocusToggle.tsx       low-rep / high-rep filter for the heatmap
+    FrequencyHeatmap.tsx     calendar heatmap (plain divs, not Recharts)
     LiftDetail.tsx           per-lift est. 1RM vs. heaviest set
     SessionLog.tsx           collapsible full history of every session
     ModeToggle.tsx           est. 1RM / max weight switch in the header

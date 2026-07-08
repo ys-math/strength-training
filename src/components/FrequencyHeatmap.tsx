@@ -2,10 +2,8 @@ import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { dailyActivity, frequencyStats, overallStats, sessionDetails, type SessionDetail } from '../lib/metrics'
 import { fmtLongDate, shortExerciseName } from '../lib/format'
-import { LOW_REP_MAX, repMatchesFocus, type DayFocus } from '../lib/dayFocus'
 import type { SetRow } from '../lib/types'
 import ChartCard from './ChartCard'
-import DayFocusToggle from './DayFocusToggle'
 
 const SEQ = ['var(--seq-0)', 'var(--seq-1)', 'var(--seq-2)', 'var(--seq-3)', 'var(--seq-4)']
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -35,25 +33,13 @@ interface HoverInfo {
 // quirk: overflow-x:auto forces overflow-y to auto as well when left unset), so
 // an absolutely-positioned tooltip nested inside it gets cut off top/bottom, not
 // just at the left/right edges.
-const FOCUS_NOTE: Record<DayFocus, string> = {
-  strength: `low-rep (≤${LOW_REP_MAX})`,
-  volume: `high-rep (>${LOW_REP_MAX})`,
-}
-
-function HeatmapTooltip({ hover, session, focus }: { hover: HoverInfo; session?: SessionDetail; focus: DayFocus }) {
+function HeatmapTooltip({ hover, session }: { hover: HoverInfo; session?: SessionDetail }) {
   const HALF_WIDTH = 110 // half of max-w-[220px]
   const idealLeft = hover.rect.left + hover.rect.width / 2
   const left = Math.min(Math.max(idealLeft, 8 + HALF_WIDTH), window.innerWidth - 8 - HALF_WIDTH)
   const showBelow = hover.rect.top < 90
 
-  // Per-exercise working-set counts restricted to the selected rep focus, so the
-  // breakdown adds up to the cell's (filtered) count.
-  const activeExercises = (session?.exercises ?? [])
-    .map((e) => ({
-      exercise: e.exercise,
-      count: e.sets.filter((s) => !s.isWarmup && repMatchesFocus(s.reps, focus)).length,
-    }))
-    .filter((e) => e.count > 0)
+  const activeExercises = session?.exercises.filter((e) => e.workingSets > 0) ?? []
 
   return (
     <div
@@ -71,28 +57,20 @@ function HeatmapTooltip({ hover, session, focus }: { hover: HoverInfo; session?:
         {fmtLongDate(hover.key)}
       </div>
       <div>
-        {hover.count} {FOCUS_NOTE[focus]} working set{hover.count === 1 ? '' : 's'}
+        {hover.count} working set{hover.count === 1 ? '' : 's'}
       </div>
       {activeExercises.length > 0 && (
         <div className="mt-0.5" style={{ color: 'var(--text-muted)' }}>
-          {activeExercises.map((e) => `${shortExerciseName(e.exercise)}×${e.count}`).join(', ')}
+          {activeExercises.map((e) => `${shortExerciseName(e.exercise)}×${e.workingSets}`).join(', ')}
         </div>
       )}
     </div>
   )
 }
 
-export default function FrequencyHeatmap({
-  rows,
-  dayFocus,
-  setDayFocus,
-}: {
-  rows: SetRow[]
-  dayFocus: DayFocus
-  setDayFocus: (f: DayFocus) => void
-}) {
+export default function FrequencyHeatmap({ rows }: { rows: SetRow[] }) {
   const { weeks, monthLabels, stats } = useMemo(() => {
-    const activity = dailyActivity(rows, (reps) => repMatchesFocus(reps, dayFocus))
+    const activity = dailyActivity(rows)
     const stats = overallStats(rows)
     type Cell = { key: string; count: number; inRange: boolean }
     if (!stats.firstDate) return { weeks: [] as Cell[][], monthLabels: [] as (string | null)[], stats }
@@ -138,7 +116,7 @@ export default function FrequencyHeatmap({
     })
 
     return { weeks, monthLabels, stats }
-  }, [rows, dayFocus])
+  }, [rows])
 
   const freq = useMemo(() => frequencyStats(rows), [rows])
 
@@ -160,8 +138,7 @@ export default function FrequencyHeatmap({
   return (
     <ChartCard
       title="Training frequency"
-      subtitle={`${stats.totalSessions} sessions · grid shows ${FOCUS_NOTE[dayFocus]} working sets`}
-      right={<DayFocusToggle dayFocus={dayFocus} setDayFocus={setDayFocus} />}
+      subtitle={`${stats.totalSessions} sessions · ${stats.totalWorkingSets} working sets`}
     >
       <div className="flex h-full flex-col justify-between">
         <div className="grid grid-cols-3 gap-2">
@@ -236,11 +213,7 @@ export default function FrequencyHeatmap({
         </div>
       </div>
 
-      {hover &&
-        createPortal(
-          <HeatmapTooltip hover={hover} session={sessionsByDate.get(hover.key)} focus={dayFocus} />,
-          document.body,
-        )}
+      {hover && createPortal(<HeatmapTooltip hover={hover} session={sessionsByDate.get(hover.key)} />, document.body)}
     </ChartCard>
   )
 }
