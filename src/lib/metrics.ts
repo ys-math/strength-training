@@ -1,7 +1,6 @@
 import { LIFTS, LIFT_BY_KEY, type LiftKey, type LiftPR, type LiftSession, type SetRow } from './types'
 import type { MetricMode } from './mode'
 import type { GoalHorizon } from './goals'
-import type { DayFocus } from './dayFocus'
 import { epley } from './parse'
 
 export const round1 = (n: number) => Math.round(n * 10) / 10
@@ -257,10 +256,13 @@ export interface DayActivity {
   workingSets: number
 }
 
-export function dailyActivity(rows: SetRow[]): Map<string, number> {
+// Working sets per day. An optional `repFilter` restricts the count to sets whose
+// reps satisfy it (used by the frequency heatmap's low-rep/high-rep view filter).
+export function dailyActivity(rows: SetRow[], repFilter?: (reps: number) => boolean): Map<string, number> {
   const byDay = new Map<string, number>()
   for (const r of rows) {
     if (r.isWarmup) continue
+    if (repFilter && !repFilter(r.reps)) continue
     byDay.set(r.dateKey, (byDay.get(r.dateKey) ?? 0) + 1)
   }
   return byDay
@@ -415,7 +417,6 @@ export interface SuggestionConfig {
     tauWeeks: number // detraining decay time-constant, weeks
     minRetention: number // floor on the retention factor (don't back off more than this)
   }
-  dup: Record<DayFocus, [number, number]> // daily-undulating rep windows, chosen via the frequency-card toggle
 }
 
 // Baseline routine shape: 2–3 warmup sets (see warmupRamp), 3 main working
@@ -431,7 +432,6 @@ export const DEFAULT_SUGGESTION_CONFIG: SuggestionConfig = {
   deloadSetFactor: 0.5,
   topSetIntensity: 0.9,
   detraining: { graceWeeks: 2, tauWeeks: 10, minRetention: 0.7 },
-  dup: { strength: [3, 5], volume: [12, 15] },
 }
 
 export type SuggestionAction =
@@ -440,7 +440,6 @@ export type SuggestionAction =
   | 'build-reps'
   | 'deload'
   | 'return'
-  | 'dup'
   | 'insufficient-data'
 
 // How the lift's recent trajectory tracks against its short-term max-weight goal.
@@ -649,7 +648,6 @@ function suggestForLift(
   rpeAvailable: boolean,
   now: number,
   goalCtx?: GoalContext,
-  dayFocus?: DayFocus,
 ): Suggestion {
   const label = LIFT_BY_KEY.get(lift)?.label ?? lift
   const tops = topWorkingSets(rows, lift)
@@ -673,19 +671,12 @@ function suggestForLift(
     }
   }
 
-  const trueLast = tops[tops.length - 1]
-  const truePrev: TopSetSummary = { load: trueLast.load, reps: trueLast.reps, sets: trueLast.sets }
+  const last = tops[tops.length - 1]
+  const prev: TopSetSummary = { load: last.load, reps: last.reps, sets: last.sets }
+  const [lo, hi] = config.repRangeByLift[lift] ?? config.repRange
   const inc = config.loadIncrement
   const sets = config.workingSets // baseline main-set count for progression/hold/return
-
-  // Daily undulating periodization: a manually-flagged day type (frequency-card
-  // toggle) swaps the working rep window for this session only; otherwise fall back
-  // to the lift's configured/default range. `stream` is the subset of history whose
-  // reps fall in that window — an inferred proxy for "past sessions of this day
-  // type" (Strong doesn't log a day-type column) — so double progression tracks
-  // each day type's own trend instead of blending a heavy day with a light one.
-  const [lo, hi] = dayFocus ? config.dup[dayFocus] : (config.repRangeByLift[lift] ?? config.repRange)
-  const stream = dayFocus ? tops.filter((t) => t.reps >= lo && t.reps <= hi) : tops
+  const stagnant = isStagnant(tops, config.stagnationWindow)
 
   // Goal pace vs. the short-term max-weight target, if one is set. Goal fields are
   // spread onto every returned suggestion via `g`.
@@ -699,53 +690,26 @@ function suggestForLift(
   }
   const g = { goalPace: pace, requiredPerWeek }
 
-  // 0. Reversibility / detraining — takes priority over progression and a day-type
-  // switch. After a layoff past the grace window, back the load off by the retention
-  // factor and ramp in, rather than pushing a PR on cold tissue. R(g) =
-  // exp(−(g−grace)/τ), floored at minRetention.
-  const gapWeeks = Math.max(0, (now - trueLast.ts) / (7 * 86400000))
+  // 0. Reversibility / detraining — takes priority. After a layoff past the grace
+  // window, back the load off by the retention factor and ramp in, rather than
+  // pushing a PR on cold tissue. R(g) = exp(−(g−grace)/τ), floored at minRetention.
+  const gapWeeks = Math.max(0, (now - last.ts) / (7 * 86400000))
   if (gapWeeks > config.detraining.graceWeeks) {
     const R = retentionFactor(gapWeeks, config.detraining)
-    const load = Math.max(inc, Math.round((trueLast.load * R) / inc) * inc)
-    const reps = Math.min(hi, Math.max(lo, trueLast.reps))
+    const load = Math.max(inc, Math.round((last.load * R) / inc) * inc)
+    const reps = Math.min(hi, Math.max(lo, last.reps))
     return {
       ...buildSuggestion(
         lift,
         'return',
         { load, reps, sets },
-        truePrev,
+        prev,
         `~${Math.round(gapWeeks)} wk since your last ${label} — strength fades with time off ` +
           `(reversibility). Ease back to ~${Math.round(R * 100)}% of your last load and rebuild.`,
       ),
       ...g,
     }
   }
-
-  // 1. DUP with no history yet in this rep window: seed a prescription from the
-  // current e1RM via the Epley inverse (load = e1RM/(1+r/30)) rather than echoing a
-  // session logged at a completely different rep range.
-  if (dayFocus && stream.length === 0) {
-    const reps = Math.round((lo + hi) / 2)
-    const load = Math.max(inc, Math.round(trueLast.bestE1rm / (1 + reps / 30) / inc) * inc)
-    const topSet = heavyTopSet(trueLast.bestE1rm, load, config.topSetIntensity, inc)
-    const styleLabel = dayFocus === 'volume' ? 'high-rep' : 'low-rep'
-    return {
-      ...buildSuggestion(
-        lift,
-        'dup',
-        { load, reps, sets },
-        truePrev,
-        `No ${styleLabel} ${label} sets logged yet — starting from your current e1RM ` +
-          `(~${round1(trueLast.bestE1rm)}kg) at ${reps} reps (daily undulating periodization).`,
-        topSet,
-      ),
-      ...g,
-    }
-  }
-
-  const last = stream[stream.length - 1]
-  const prev: TopSetSummary = { load: last.load, reps: last.reps, sets: last.sets }
-  const stagnant = isStagnant(stream, config.stagnationWindow)
 
   // The heavy specificity top set (SAID / Size Principle) attached to progression &
   // hold suggestions — null on deload/return where the intent is to ease off. Surfaced
@@ -755,7 +719,7 @@ function suggestForLift(
   // 1. Double progression on the top working set — strongest signal.
   if (last.reps >= hi) {
     // 3. RPE (only if tracked): rising effort at the same load/reps → hold.
-    if (rpeAvailable && rpeRisingAtConstant(stream)) {
+    if (rpeAvailable && rpeRisingAtConstant(tops)) {
       return {
         ...buildSuggestion(
           lift,
@@ -819,7 +783,7 @@ function suggestForLift(
   }
 
   // Below range: hold and build reps, unless it's dragging on (2. deload).
-  const belowRepeated = trailingBelowRange(stream, lo) >= config.belowRangeRepeat
+  const belowRepeated = trailingBelowRange(tops, lo) >= config.belowRangeRepeat
   if (belowRepeated || stagnant) {
     const why = belowRepeated
       ? `stuck below ${lo} reps ${config.belowRangeRepeat}+ sessions running`
@@ -847,12 +811,11 @@ export function nextSessionSuggestion(
   goalCtx?: GoalContext,
   config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG,
   now: number = latestTs(rows),
-  dayFocus?: DayFocus,
 ): Record<LiftKey, Suggestion> {
   const rpeAvailable = hasRpeData(rows)
   const result = {} as Record<LiftKey, Suggestion>
   for (const lift of LIFTS) {
-    result[lift.key] = suggestForLift(rows, lift.key, config, rpeAvailable, now, goalCtx, dayFocus)
+    result[lift.key] = suggestForLift(rows, lift.key, config, rpeAvailable, now, goalCtx)
   }
   return result
 }

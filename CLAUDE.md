@@ -90,20 +90,14 @@ and `PlanSet`). `LatestWorkout` renders warmup chips **before** the working-set 
 they're actually done in) with no divider label — the `W` prefix on each chip (from `SetChip`'s
 `warmup` prop) is identification enough.
 
-**Daily undulating periodization (DUP).** A segmented toggle on the Training-frequency card
-(`DayFocusToggle`, state in `useDayFocus`/`src/lib/dayFocus.ts`, persisted like the metric mode)
-flags the *next* session as a `'strength'` (low-rep/heavy) or `'volume'` (high-rep/light) day.
-`Dashboard` threads the selected `DayFocus` into `nextSessionSuggestion`'s `dayFocus` param, which
-swaps the working rep window to `config.dup[dayFocus]` (`[3,5]` / `[12,15]`, vs. the default
-`repRange` `[6,10]`) for that call only. Since Strong doesn't log a day-type column, the engine
-infers "past sessions of this day type" as `stream` — the subset of `topWorkingSets` whose reps
-already fall in that window — and runs the **same** double-progression/deload logic against
-`stream` instead of the full history, so a heavy day and a light day each track their own trend
-instead of blending. Detraining still checks the *true* most-recent session regardless of
-`dayFocus` (a layoff is a layoff either way). If `stream` is empty (no sets logged yet in that rep
-window), `suggestForLift` returns action `'dup'`: a fresh prescription seeded from the current
-e1RM via the Epley inverse (`load = e1RM/(1 + reps/30)`) at the window's midpoint reps, rather than
-echoing a session logged at a completely different rep range.
+**Heatmap rep-focus filter.** A segmented toggle on the Training-frequency card (`DayFocusToggle`,
+state in `useDayFocus`/`src/lib/dayFocus.ts`, persisted like the metric mode) filters the heatmap
+grid to the days you trained **low-rep** (`'strength'`, reps ≤ `LOW_REP_MAX` = 8) or **high-rep**
+(`'volume'`, reps > 8) — `repMatchesFocus` is the predicate. `FrequencyHeatmap` passes it to
+`dailyActivity(rows, repFilter?)`, which counts only matching working sets per day; the existing
+5-bucket color scale and the tooltip's per-exercise breakdown both reflect the filtered counts.
+This is **purely a heatmap view filter** — it does *not* touch `nextSessionSuggestion` (an earlier
+version wired it into a DUP rep-window switch; that coupling was removed).
 
 ### Goals (drawn on the chart)
 

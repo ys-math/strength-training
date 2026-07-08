@@ -1,8 +1,8 @@
 import { DAY_FOCUSES, type DayFocus } from '../lib/dayFocus'
 
-// Segmented control flagging the next session as a low-rep/heavy day or a
-// high-rep/light day — daily undulating periodization. Feeds nextSessionSuggestion
-// via Dashboard so the Next-session card retargets its rep range/load to match.
+// Segmented control that filters the Training-frequency heatmap to the days you
+// trained with low reps (heavy) or high reps (light). Purely a view filter for the
+// heatmap grid — it doesn't affect the next-session suggestion.
 export default function DayFocusToggle({
   dayFocus,
   setDayFocus,
@@ -14,7 +14,7 @@ export default function DayFocusToggle({
     <div
       className="inline-flex rounded-full p-0.5"
       role="group"
-      aria-label="Next session focus"
+      aria-label="Heatmap rep focus"
       style={{ border: '1px solid var(--border)', background: 'var(--surface-1)' }}
     >
       {DAY_FOCUSES.map((f) => {

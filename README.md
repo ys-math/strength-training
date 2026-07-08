@@ -28,9 +28,9 @@ CSV export. Modern dark UI, deployed free on GitHub Pages.
   and a goal-pace chip (see [How suggestions work](#how-suggestions-work) and
   [the theory → formula map](#the-science-theory--formula-map)).
 - **Weekly volume** — working tonnage (weight × reps), warmup sets excluded.
-- **Training frequency** — GitHub-style calendar heatmap of working sets per day, plus a
-  **day-focus toggle** (low reps/heavy vs. high reps/light) that retargets the Next-session
-  card — daily undulating periodization (see [How suggestions work](#how-suggestions-work)).
+- **Training frequency** — GitHub-style calendar heatmap of working sets per day (5-level
+  colour gradation), with a **rep-focus toggle** that filters the grid to your **low-rep
+  (≤ 8, heavy)** or **high-rep (> 8, light)** days.
 - **Per-lift detail** — est. 1RM vs. heaviest set for any single lift.
 - **Session log** — every exercise, set, and volume per workout.
 - **Themes** — switch between Modern Dark, Modern Light, and Cozy; your choice is remembered.
@@ -61,20 +61,7 @@ $(x)^+ = \max(x, 0)$.
    replicated findings in resistance-training research. This is the primary driver because
    it's the best-supported. At the top of the window: $L' = L + \Delta$ and $r' = r_{\min}$.
 
-2. **Daily undulating periodization (DUP)** — a toggle on the Training-frequency card lets
-   you flag the *next* session as a low-rep/heavy day ($[3, 5]$ reps) or a high-rep/light day
-   ($[12, 15]$ reps), instead of the default $[6, 10]$ window. Head-to-head trials of DUP vs.
-   linear periodization are inconsistent (see rule 7), so the app doesn't auto-cycle day types
-   for you — *you* decide what today is, and the engine just retargets rule 1's window to match.
-   Strong doesn't log a day-type column, so "history for this day type" is inferred: the subset
-   of your past top sets whose reps already fall in the chosen window. Double progression then
-   runs against that subset, so a heavy day and a light day each track their own trend rather
-   than one blending into the other. The first time you flag a window with no matching history,
-   there's nothing to progress from, so the engine seeds a load from your current e1RM via the
-   Epley inverse at the window's midpoint reps: $L = \big\lfloor E / (1 + r/30) \big\rceil_{\Delta}$.
-   A layoff (rule 3) still overrides this regardless of which day type is flagged.
-
-3. **Heavy top set for specificity** — on any progression/hold session the engine appends
+2. **Heavy top set for specificity** — on any progression/hold session the engine appends
    one **heavy, low-rep top set** at ≈ 90 % of your estimated 1RM. Rationale: because the
    goal here is a **1RM / max weight**, the **SAID principle** says you must also train that
    specific demand, and the **Size Principle** (Henneman) plus **rate coding / motor-unit
@@ -85,7 +72,7 @@ $(x)^+ = \max(x, 0)$.
    in the plan (after a `top` label) and is omitted when it wouldn't be heavier than your working
    set (you're already training heavy enough) or on a deload/return.
 
-4. **Detraining back-off** — if it's been a while since you last trained a lift, the next
+3. **Detraining back-off** — if it's been a while since you last trained a lift, the next
    suggestion **reduces the load** and flags a *return* session instead of chasing a PR on
    detrained tissue. This is **reversibility** (loss of adaptation with time off), which is
    very well documented. With grace $g_0 = 2$ and time-constant $\tau = 10$ (weeks), the retention factor is
@@ -95,32 +82,31 @@ $(x)^+ = \max(x, 0)$.
    never assume you lost more than ~30 %), and the decay constant is a deliberately
    conservative heuristic — real detraining rates vary with training age and layoff length.
 
-5. **Plateau → deload** — if estimated 1RM is flat or declining across the last few
+4. **Plateau → deload** — if estimated 1RM is flat or declining across the last few
    sessions (default 3) and rule 1 isn't already calling for more load, suggest cutting
    volume (~half the sets) for a session or two rather than the load. This is loosely
    motivated by the **fitness–fatigue model** (Bannister, 1975), but note the trigger here
    is a crude e1RM-trend heuristic, **not** a fitted two-factor model — without soreness,
    HRV, or sleep data we can't do better, and shouldn't pretend to.
 
-6. **RPE autoregulation** — *only if* Strong's RPE column is populated. If effort is
+5. **RPE autoregulation** — *only if* Strong's RPE column is populated. If effort is
    trending up at the same load and reps, bias toward holding instead of progressing
    (RPE/RIR-based autoregulation; Zourdos et al., 2016; Helms et al., 2016). Evidence
    doesn't clearly rank RPE-based loading above percentage- or velocity-based approaches,
    so it's treated as a mild adjustment, not a primary driver — and it's a complete no-op
    when the export has no RPE (as most Strong exports don't).
 
-7. **No generic weekly-volume landmarks.** The familiar "~10–20 sets per muscle per week"
+6. **No generic weekly-volume landmarks.** The familiar "~10–20 sets per muscle per week"
    figures come from dose–response meta-analyses that pool *every* exercise hitting a muscle
    group (e.g. Schoenfeld, Ogborn & Krieger, 2017). This dashboard tracks a single exercise
    per lift, so raw "sets/week for this lift" isn't comparable to those numbers; weekly set
    counts are context only and never gate a suggestion.
 
-8. **No hardcoded periodization model or Prilepin table.** Head-to-head comparisons of
+7. **No hardcoded periodization model or Prilepin table.** Head-to-head comparisons of
    linear vs. undulating periodization return inconsistent, frequently null differences,
    and Prilepin's table is *observational* — distilled from watching successful lifters, not
-   an experiment. That's why rule 2's DUP is opt-in and manual rather than an auto-cycling
-   schedule the engine imposes on you; Prilepin's table remains fine as optional reference but
-   is deliberately not wired into the engine as if it were settled law.
+   an experiment. Both are fine as optional reference, but are deliberately not wired into the
+   engine as if they were settled law.
 
 **The full plan.** The card isn't just the target working set — it lays out the whole session in
 order as set chips, with a fixed **baseline shape: 2–3 warmup sets, 3 main working sets, and 1 heavy
@@ -195,7 +181,6 @@ $\lfloor\cdot\rceil_\Delta$ nearest plate; $(x)^+ = \max(x, 0)$.
 |---|---|---|---|---|
 | **SAID / Specificity** | Adaptation is specific to the imposed demand | 1RM goal ⇒ train heavy + specific: heavy top set, and goals gated by imposed stimulus | top set at $I \approx 0.90$; $\sigma$ (below) | Near-law |
 | **Progressive Overload** | Adaptation needs a rising demand over time | Double progression on the top working set | $L' = L + \Delta,\ r' = r_{\min}$ | Most-validated principle |
-| **Daily Undulating Periodization** | Varying rep/load targets session-to-session (vs. a fixed linear window) | Manual day-focus toggle swaps rep window to $[3,5]$ or $[12,15]$; progression tracked per inferred day-type stream | seed $L = \big\lfloor E/(1+r/30)\big\rceil_\Delta$ at midpoint $r$ | Mixed/inconsistent trial evidence — kept opt-in, not automated |
 | **Reversibility / Detraining** | Adaptation is lost with time off | Back off load & flag a *return* after a layoff | $R(g)=\max\big(0.70,\ e^{-(g-g_0)^+/\tau}\big),\ L' = \lfloor R\,L\rceil_\Delta$ | Well documented |
 | **Size Principle (Henneman)** | Motor units recruit small→large; high-threshold units need near-max force | The heavy top set recruits the strongest units moderate reps miss | $r = 30\left(\tfrac{1}{I}-1\right) \approx 3$ at $I=0.90$ | Established electrophysiology |
 | **Neural Adaptation (early gains)** | Early strength is mostly neural & fast; later gains slow | Neural-phase factor shrinks *advanced* lifters' goals | $\psi=\max\big(0.55,\ e^{-(A-A_0)^+/\tau_n}\big)$ | Strong EMG / twitch-interpolation evidence |
@@ -276,10 +261,12 @@ src/
     format.ts                date / kg / tonnage display helpers
     theme.ts                 the selectable UI themes (dark / light / cozy)
     mode.ts                  metric mode (est. 1RM vs. actual max weight)
+    dayFocus.ts              heatmap rep-focus filter (low reps ≤8 / high reps >8)
     goals.ts                 goal horizons (3/6/12 mo) + fixed calendar-quarter checkpoints
   hooks/
     useTheme.ts              reads/writes the active theme (data-theme + localStorage)
     useMetricMode.ts         reads/writes the active metric mode (localStorage)
+    useDayFocus.ts           reads/writes the heatmap rep-focus filter (localStorage)
   components/
     Dashboard.tsx            page layout; computes goal-aware suggestions once, passes them down
     StatCards.tsx            Big-4 total + per-lift PR cards
@@ -289,7 +276,8 @@ src/
     ProgressChart.tsx        headline chart: dotted next-session projection, 3-mo goal lines (toggle),
                              span slider; est. 1RM ⇄ max weight
     VolumeChart.tsx          weekly stacked tonnage bars
-    FrequencyHeatmap.tsx     calendar heatmap (plain divs, not Recharts)
+    FrequencyHeatmap.tsx     calendar heatmap (plain divs, not Recharts) + rep-focus filter
+    DayFocusToggle.tsx       low-rep / high-rep filter for the heatmap
     LiftDetail.tsx           per-lift est. 1RM vs. heaviest set
     SessionLog.tsx           collapsible full history of every session
     ModeToggle.tsx           est. 1RM / max weight switch in the header

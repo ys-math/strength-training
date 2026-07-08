@@ -11,7 +11,6 @@ const ACTION_LABEL: Record<string, string> = {
   'build-reps': 'build reps',
   deload: 'deload',
   return: 'return',
-  dup: 'new range',
   'insufficient-data': 'no data',
 }
 
@@ -38,10 +37,7 @@ function PaceChip({ pace }: { pace: GoalPace }) {
 function DeltaBadge({ s }: { s: Suggestion }) {
   let text = 'hold'
   let color = 'var(--text-muted)'
-  if (s.action === 'dup') {
-    text = 'DUP: new rep range'
-    color = 'var(--text-muted)'
-  } else if (s.action === 'return' && s.loadDelta < 0) {
+  if (s.action === 'return' && s.loadDelta < 0) {
     text = `▼ back off ${s.loadDelta} kg`
     color = 'var(--lift-dl)'
   } else if (s.loadDelta > 0) {

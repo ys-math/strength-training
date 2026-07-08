@@ -31,8 +31,8 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
     }
     const goalCtx: GoalContext = { target, weeksLeft: weeksUntil(quarterCheckpoints().horizonDate.short) }
     // Real calendar "now" so the detraining back-off reflects an actual layoff.
-    return nextSessionSuggestion(rows, goalCtx, undefined, Date.now(), dayFocus)
-  }, [rows, dayFocus])
+    return nextSessionSuggestion(rows, goalCtx, undefined, Date.now())
+  }, [rows])
 
   if (rows.length === 0) {
     return (
