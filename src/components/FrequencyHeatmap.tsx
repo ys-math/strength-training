@@ -2,8 +2,10 @@ import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { dailyActivity, frequencyStats, overallStats, sessionDetails, type SessionDetail } from '../lib/metrics'
 import { fmtLongDate, shortExerciseName } from '../lib/format'
+import type { DayFocus } from '../lib/dayFocus'
 import type { SetRow } from '../lib/types'
 import ChartCard from './ChartCard'
+import DayFocusToggle from './DayFocusToggle'
 
 const SEQ = ['var(--seq-0)', 'var(--seq-1)', 'var(--seq-2)', 'var(--seq-3)', 'var(--seq-4)']
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -68,7 +70,15 @@ function HeatmapTooltip({ hover, session }: { hover: HoverInfo; session?: Sessio
   )
 }
 
-export default function FrequencyHeatmap({ rows }: { rows: SetRow[] }) {
+export default function FrequencyHeatmap({
+  rows,
+  dayFocus,
+  setDayFocus,
+}: {
+  rows: SetRow[]
+  dayFocus: DayFocus
+  setDayFocus: (f: DayFocus) => void
+}) {
   const { weeks, monthLabels, stats } = useMemo(() => {
     const activity = dailyActivity(rows)
     const stats = overallStats(rows)
@@ -139,6 +149,7 @@ export default function FrequencyHeatmap({ rows }: { rows: SetRow[] }) {
     <ChartCard
       title="Training frequency"
       subtitle={`${stats.totalSessions} sessions · ${stats.totalWorkingSets} working sets`}
+      right={<DayFocusToggle dayFocus={dayFocus} setDayFocus={setDayFocus} />}
     >
       <div className="flex h-full flex-col justify-between">
         <div className="grid grid-cols-3 gap-2">

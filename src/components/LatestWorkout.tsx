@@ -45,21 +45,12 @@ export default function LatestWorkout({ rows }: { rows: SetRow[] }) {
                 </div>
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {warmups.map((g, i) => (
+                  <SetChip key={`u${i}`} g={g} warmup />
+                ))}
                 {working.map((g, i) => (
                   <SetChip key={`w${i}`} g={g} />
                 ))}
-                {warmups.length > 0 && (
-                  <>
-                    {working.length > 0 && (
-                      <span className="mx-0.5 text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                        warmup
-                      </span>
-                    )}
-                    {warmups.map((g, i) => (
-                      <SetChip key={`u${i}`} g={g} warmup />
-                    ))}
-                  </>
-                )}
               </div>
             </div>
           )

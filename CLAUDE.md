@@ -47,8 +47,10 @@ strong_workouts.csv ?raw
   `liftPR`, `e1rmSeries` (per-session best e1RM), `maxWeightSeries` (per-session heaviest
   set + its reps/set-count, for the max-weight chart), `cumulativeSeries(rows, mode)` and
   `big4Series(rows, mode)` (each lift's / the summed best-to-date value, only climbs),
-  `currentPrev`, `weeklyVolume` (ISO week), `dailyActivity`, `sessionDetails`, `overallStats`,
-  and `nextSessionSuggestion(rows, goalCtx?, config?, now?)` (per-lift load × reps heuristic — config
+  `currentPrev`, `weeklyVolume` (ISO week, per-lift **and** a `total` field — `VolumeChart` draws the
+  per-lift stack as bars plus `total` as an overlaid line, so the combined tonnage trend reads at a
+  glance), `dailyActivity`, `sessionDetails`, `overallStats`,
+  and `nextSessionSuggestion(rows, goalCtx?, config?, now?, dayFocus?)` (per-lift load × reps heuristic — config
   in `DEFAULT_SUGGESTION_CONFIG`, theory in README's "How suggestions work" / "theory → formula map").
   It also emits a heavy **`topSet`** (SAID/Size Principle, `heavyTopSet` at ~90% e1RM) and a
   **`'return'`** action that backs the load off after a layoff (reversibility, `retentionFactor`);
@@ -86,7 +88,24 @@ format as `LatestWorkout`** — a header (color chip + label, pace/action tags) 
 of `groupSets`-collapsed `SetChip` pills (W-prefixed warmups, then working, then a `top` divider +
 top-set pill, then the `DeltaBadge`). Both cards share `SetChip` / `groupSets` from
 `components/SetChip.tsx` (`groupSets` is typed to `{ weight, reps }[]` so it groups both `SetDetail`
-and `PlanSet`).
+and `PlanSet`). `LatestWorkout` renders warmup chips **before** the working-set chips (the order
+they're actually done in) with no divider label — the `W` prefix on each chip (from `SetChip`'s
+`warmup` prop) is identification enough.
+
+**Daily undulating periodization (DUP).** A segmented toggle on the Training-frequency card
+(`DayFocusToggle`, state in `useDayFocus`/`src/lib/dayFocus.ts`, persisted like the metric mode)
+flags the *next* session as a `'strength'` (low-rep/heavy) or `'volume'` (high-rep/light) day.
+`Dashboard` threads the selected `DayFocus` into `nextSessionSuggestion`'s `dayFocus` param, which
+swaps the working rep window to `config.dup[dayFocus]` (`[3,5]` / `[12,15]`, vs. the default
+`repRange` `[6,10]`) for that call only. Since Strong doesn't log a day-type column, the engine
+infers "past sessions of this day type" as `stream` — the subset of `topWorkingSets` whose reps
+already fall in that window — and runs the **same** double-progression/deload logic against
+`stream` instead of the full history, so a heavy day and a light day each track their own trend
+instead of blending. Detraining still checks the *true* most-recent session regardless of
+`dayFocus` (a layoff is a layoff either way). If `stream` is empty (no sets logged yet in that rep
+window), `suggestForLift` returns action `'dup'`: a fresh prescription seeded from the current
+e1RM via the Epley inverse (`load = e1RM/(1 + reps/30)`) at the window's midpoint reps, rather than
+echoing a session logged at a completely different rep range.
 
 ### Goals (drawn on the chart)
 

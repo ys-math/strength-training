@@ -234,6 +234,38 @@ describe('sessionPlan', () => {
   })
 })
 
+describe('nextSessionSuggestion — DUP (daily undulating periodization)', () => {
+  it('reclassifies the same history differently depending on the flagged day type', () => {
+    const rows = [...session('2026-01-01', 'BP', 100, 5, 3), ...session('2026-01-03', 'BP', 100, 5, 3)]
+    // Default (balanced 6–10) range: 5 reps is below range twice running → deload.
+    expect(nextSessionSuggestion(rows).BP.action).toBe('deload')
+    // Flagged as a strength day (3–5): the same 5 reps sits at the top of the window.
+    const s = nextSessionSuggestion(rows, undefined, undefined, undefined, 'strength').BP
+    expect(s.action).toBe('increase-load')
+    expect(s.load).toBe(102.5)
+    expect(s.reps).toBe(3)
+    expect(s.sets).toBe(3)
+  })
+
+  it('seeds a fresh prescription from the current e1RM when the flagged day type has no matching history', () => {
+    const rows = session('2026-01-01', 'BP', 60, 8, 3) // e1RM = 76, no sets in the 12–15 volume window
+    const s = nextSessionSuggestion(rows, undefined, undefined, undefined, 'volume').BP
+    expect(s.action).toBe('dup')
+    expect(s.reps).toBe(14) // midpoint of 12–15
+    expect(s.load).toBe(52.5) // 76 / (1 + 14/30), snapped to a 2.5 plate
+    expect(s.sets).toBe(3)
+    expect(s.topSet).toEqual({ load: 67.5, reps: 3, sets: 1 })
+    expect(s.rationale).toMatch(/undulating/i)
+  })
+
+  it('still lets detraining take priority over a flagged day type', () => {
+    const rows = session('2026-01-05', 'BP', 60, 8, 3)
+    const now = new Date('2026-01-05T09:00:00').getTime() + 6 * 7 * 86400000 // 6 weeks off
+    const s = nextSessionSuggestion(rows, undefined, undefined, now, 'volume').BP
+    expect(s.action).toBe('return')
+  })
+})
+
 describe('nextSessionSuggestion — coverage & edges', () => {
   it('reports insufficient data for a lift with no history', () => {
     const rows = session('2026-01-01', 'BP', 60, 8, 3)
