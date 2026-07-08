@@ -1,9 +1,8 @@
 import { useMemo } from 'react'
 import {
   Bar,
+  BarChart,
   CartesianGrid,
-  ComposedChart,
-  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -21,13 +20,10 @@ export default function VolumeChart({ rows }: { rows: SetRow[] }) {
   const lastKey = LIFTS[LIFTS.length - 1].key
 
   return (
-    <ChartCard
-      title="Weekly volume"
-      subtitle="Working tonnage (weight × reps) per lift, with the combined total — warmups excluded"
-    >
+    <ChartCard title="Weekly volume" subtitle="Working tonnage (weight × reps), warmups excluded">
       <div style={{ width: '100%', height: 300 }}>
         <ResponsiveContainer>
-          <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 4, left: 4 }} barCategoryGap="20%">
+          <BarChart data={data} margin={{ top: 8, right: 8, bottom: 4, left: 4 }} barCategoryGap="20%">
             <CartesianGrid stroke="var(--gridline)" vertical={false} />
             <XAxis
               dataKey="label"
@@ -57,16 +53,7 @@ export default function VolumeChart({ rows }: { rows: SetRow[] }) {
                 isAnimationActive={false}
               />
             ))}
-            <Line
-              dataKey="total"
-              name="Total"
-              stroke="var(--text-primary)"
-              strokeWidth={2}
-              dot={{ r: 2.5, fill: 'var(--text-primary)', strokeWidth: 0 }}
-              activeDot={{ r: 4 }}
-              isAnimationActive={false}
-            />
-          </ComposedChart>
+          </BarChart>
         </ResponsiveContainer>
       </div>
     </ChartCard>

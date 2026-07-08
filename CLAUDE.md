@@ -47,9 +47,7 @@ strong_workouts.csv ?raw
   `liftPR`, `e1rmSeries` (per-session best e1RM), `maxWeightSeries` (per-session heaviest
   set + its reps/set-count, for the max-weight chart), `cumulativeSeries(rows, mode)` and
   `big4Series(rows, mode)` (each lift's / the summed best-to-date value, only climbs),
-  `currentPrev`, `weeklyVolume` (ISO week, per-lift **and** a `total` field — `VolumeChart` draws the
-  per-lift stack as bars plus `total` as an overlaid line, so the combined tonnage trend reads at a
-  glance), `dailyActivity`, `sessionDetails`, `overallStats`,
+  `currentPrev`, `weeklyVolume` (ISO week), `dailyActivity`, `sessionDetails`, `overallStats`,
   and `nextSessionSuggestion(rows, goalCtx?, config?, now?, dayFocus?)` (per-lift load × reps heuristic — config
   in `DEFAULT_SUGGESTION_CONFIG`, theory in README's "How suggestions work" / "theory → formula map").
   It also emits a heavy **`topSet`** (SAID/Size Principle, `heavyTopSet` at ~90% e1RM) and a

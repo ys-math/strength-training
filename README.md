@@ -27,8 +27,7 @@ CSV export. Modern dark UI, deployed free on GitHub Pages.
   specificity — with the change vs. last time highlighted, an automatic **back-off after a layoff**,
   and a goal-pace chip (see [How suggestions work](#how-suggestions-work) and
   [the theory → formula map](#the-science-theory--formula-map)).
-- **Weekly volume** — working tonnage (weight × reps) per lift as a stacked bar, plus the
-  **combined total** as an overlaid line; warmup sets excluded.
+- **Weekly volume** — working tonnage (weight × reps), warmup sets excluded.
 - **Training frequency** — GitHub-style calendar heatmap of working sets per day, plus a
   **day-focus toggle** (low reps/heavy vs. high reps/light) that retargets the Next-session
   card — daily undulating periodization (see [How suggestions work](#how-suggestions-work)).
