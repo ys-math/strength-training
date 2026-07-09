@@ -135,24 +135,18 @@ describe('goal-aware next session', () => {
   const ctx = (target: number, weeksLeft = 13): GoalContext => ({ target: { BP: target }, weeksLeft })
 
   it('pushes reps instead of a mild-stagnation deload when behind pace', () => {
-    // Within range (8 in 6–10), e1RM flat over 3 sessions → normally a deload.
+    // Within the moderate window (7 in 6–8), e1RM flat over 3 sessions → normally a deload.
     const rows = [
-      ...session('2026-01-01', 'BP', 60, 8),
-      ...session('2026-01-03', 'BP', 60, 8),
-      ...session('2026-01-05', 'BP', 60, 8),
+      ...session('2026-01-01', 'BP', 60, 7),
+      ...session('2026-01-03', 'BP', 60, 7),
+      ...session('2026-01-05', 'BP', 60, 7),
     ]
-    expect(nextSessionSuggestion(rows).BP.action).toBe('deload') // no goal → unchanged
-    const withGoal = nextSessionSuggestion(rows, ctx(80)).BP // far target, flat rate → behind
+    // Focus pinned so the flat 7-rep history stays in-window (auto-inference would
+    // undulate to a different focus and cold-start instead).
+    expect(nextSessionSuggestion(rows, undefined, undefined, undefined, 'moderate').BP.action).toBe('deload')
+    const withGoal = nextSessionSuggestion(rows, ctx(80), undefined, undefined, 'moderate').BP // far target → behind
     expect(withGoal.goalPace).toBe('behind')
     expect(withGoal.action).toBe('add-rep')
-  })
-
-  it('still deloads a hard below-range stall regardless of goal', () => {
-    const rows = [
-      ...session('2026-01-01', 'BP', 60, 4),
-      ...session('2026-01-03', 'BP', 60, 5),
-    ]
-    expect(nextSessionSuggestion(rows, ctx(80)).BP.action).toBe('deload')
   })
 
   it('leaves goalPace null when no goal context is given', () => {

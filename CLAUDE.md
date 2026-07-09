@@ -48,7 +48,7 @@ strong_workouts.csv ?raw
   set + its reps/set-count, for the max-weight chart), `cumulativeSeries(rows, mode)` and
   `big4Series(rows, mode)` (each lift's / the summed best-to-date value, only climbs),
   `currentPrev`, `weeklyVolume` (ISO week), `dailyActivity`, `sessionDetails`, `overallStats`,
-  and `nextSessionSuggestion(rows, goalCtx?, config?, now?)` (per-lift load × reps heuristic — config
+  and `nextSessionSuggestion(rows, goalCtx?, config?, now?, focus?)` (per-lift load × reps heuristic — config
   in `DEFAULT_SUGGESTION_CONFIG`, theory in README's "How suggestions work" / "theory → formula map").
   It also emits a heavy **`topSet`** (SAID/Size Principle, `heavyTopSet` at ~90% e1RM) and a
   **`'return'`** action that backs the load off after a layoff (reversibility, `retentionFactor`);
@@ -89,6 +89,23 @@ top-set pill, then the `DeltaBadge`). Both cards share `SetChip` / `groupSets` f
 and `PlanSet`). `LatestWorkout` renders warmup chips **before** the working-set chips (the order
 they're actually done in) with no divider label — the `W` prefix on each chip (from `SetChip`'s
 `warmup` prop) is identification enough.
+
+**Daily undulating periodization (DUP).** The engine is **always** DUP — one **global focus** per
+next session, `'heavy' | 'moderate' | 'light'` (rep windows `[3,5]/[6,8]/[9,12]` in
+`config.dup.windows`), chosen **automatically, no UI control**. `nextSessionFocus(rows)` classifies
+your most recent training day (median of that day's per-lift top-set reps) into a focus, then
+undulates one step along `config.dup.cycle` (`heavy → light → moderate`), returning `{ focus, from }`.
+`nextSessionSuggestion` computes it once and threads it into every lift; the optional `focus?` param is
+a **testability seam only** (Dashboard never passes it, so there's no control). Per lift, the focus
+swaps the working rep window and scopes progression to that focus's **`stream`** — the subset of
+`topWorkingSets` whose reps fall in the window — so heavy and light days each track their own trend.
+Cold start (empty stream): action **`'dup'`**, a load seeded from current e1RM via the Epley inverse
+at the window midpoint. Detraining still checks the *true* last session and overrides regardless of
+focus. `NextSession` shows a **`FocusBanner`** (label + rep window + "last session was X, undulating
+to a Y day") atop the per-lift rows. **Consequence:** the card deliberately contradicts your last
+session (heavy → recommends light); the banner's "why" line is what keeps that from reading as a bug.
+Because `stream` is window-scoped, the engine's old *below-range* branch (`build-reps`) is now
+unreachable and kept only as the fallback return.
 
 ### Goals (drawn on the chart)
 

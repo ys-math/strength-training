@@ -1,5 +1,13 @@
 import { useMemo } from 'react'
-import { hasRpeData, sessionPlan, type GoalPace, type Suggestion } from '../lib/metrics'
+import {
+  DEFAULT_SUGGESTION_CONFIG,
+  FOCUS_META,
+  hasRpeData,
+  nextSessionFocus,
+  sessionPlan,
+  type GoalPace,
+  type Suggestion,
+} from '../lib/metrics'
 import { LIFTS, type LiftKey, type SetRow } from '../lib/types'
 import ChartCard from './ChartCard'
 import SetChip, { groupSets } from './SetChip'
@@ -11,7 +19,36 @@ const ACTION_LABEL: Record<string, string> = {
   'build-reps': 'build reps',
   deload: 'deload',
   return: 'return',
+  dup: 'new range',
   'insufficient-data': 'no data',
+}
+
+// Banner naming the whole session's inferred DUP focus and why it undulated there.
+function FocusBanner({ rows }: { rows: SetRow[] }) {
+  const plan = useMemo(() => nextSessionFocus(rows), [rows])
+  const [lo, hi] = DEFAULT_SUGGESTION_CONFIG.dup.windows[plan.focus]
+  const meta = FOCUS_META[plan.focus]
+  const why = plan.from
+    ? `Last session was ${plan.from} — undulating to a ${meta.intent} day.`
+    : 'Starting the undulation cycle.'
+  return (
+    <div
+      className="mb-2 rounded-lg px-3 py-2"
+      style={{ border: '1px solid var(--border)', background: 'var(--surface-1)' }}
+    >
+      <div className="flex items-baseline gap-2">
+        <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+          {meta.label}
+        </span>
+        <span className="text-[11px] font-medium tabular-nums" style={{ color: 'var(--text-muted)' }}>
+          {lo}–{hi} reps
+        </span>
+      </div>
+      <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+        {why}
+      </p>
+    </div>
+  )
 }
 
 const PACE: Record<GoalPace, { label: string; color: string }> = {
@@ -37,7 +74,9 @@ function PaceChip({ pace }: { pace: GoalPace }) {
 function DeltaBadge({ s }: { s: Suggestion }) {
   let text = 'hold'
   let color = 'var(--text-muted)'
-  if (s.action === 'return' && s.loadDelta < 0) {
+  if (s.action === 'dup') {
+    text = 'DUP: new rep range'
+  } else if (s.action === 'return' && s.loadDelta < 0) {
     text = `▼ back off ${s.loadDelta} kg`
     color = 'var(--lift-dl)'
   } else if (s.loadDelta > 0) {
@@ -101,8 +140,9 @@ export default function NextSession({
   return (
     <ChartCard
       title="Next session"
-      subtitle="Full set-by-set plan per lift — warmup ramp, working sets, and heavy top set"
+      subtitle="Auto-undulating plan (DUP) — focus set by your recent training"
     >
+      <FocusBanner rows={rows} />
       <div className="space-y-2">
         {LIFTS.map((lift) => {
           const s = suggestions[lift.key]

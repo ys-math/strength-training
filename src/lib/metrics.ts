@@ -400,9 +400,14 @@ export function frequencyStats(rows: SetRow[]): FrequencyStats {
 // work"). All tunable thresholds live in DEFAULT_SUGGESTION_CONFIG — no magic
 // numbers scattered through the branching.
 
+// Daily undulating periodization (DUP): each session carries one of three
+// rep/intensity focuses. The engine infers the *next* session's focus from your
+// most recent training day and undulates one step along `cycle` (see
+// nextSessionFocus). The chosen focus swaps the working rep window and scopes
+// progression to that focus's slice of history.
+export type DayFocus = 'heavy' | 'moderate' | 'light'
+
 export interface SuggestionConfig {
-  repRange: [number, number] // default working-rep window (inclusive)
-  repRangeByLift: Partial<Record<LiftKey, [number, number]>> // per-lift overrides
   loadIncrement: number // smallest plate jump, kg
   stagnationWindow: number // sessions inspected for the e1RM plateau check
   belowRangeRepeat: number // consecutive below-range sessions that trigger a deload
@@ -414,14 +419,16 @@ export interface SuggestionConfig {
     tauWeeks: number // detraining decay time-constant, weeks
     minRetention: number // floor on the retention factor (don't back off more than this)
   }
+  dup: {
+    windows: Record<DayFocus, [number, number]> // working-rep window per focus (inclusive)
+    cycle: DayFocus[] // order the focus undulates through, session to session
+  }
 }
 
 // Baseline routine shape: 2–3 warmup sets (see warmupRamp), 3 main working
 // sets, 1 heavy top set — trimmed on a deload or omitted where noted (see
 // README "How suggestions work").
 export const DEFAULT_SUGGESTION_CONFIG: SuggestionConfig = {
-  repRange: [6, 10],
-  repRangeByLift: {},
   loadIncrement: 2.5,
   stagnationWindow: 3,
   belowRangeRepeat: 2,
@@ -429,6 +436,12 @@ export const DEFAULT_SUGGESTION_CONFIG: SuggestionConfig = {
   deloadSetFactor: 0.5,
   topSetIntensity: 0.9,
   detraining: { graceWeeks: 2, tauWeeks: 10, minRetention: 0.7 },
+  dup: {
+    // Windows fit to real logged training; cycle undulates for max session-to-session
+    // contrast (never heavy → heavy). See README "How suggestions work".
+    windows: { heavy: [3, 5], moderate: [6, 8], light: [9, 12] },
+    cycle: ['heavy', 'light', 'moderate'],
+  },
 }
 
 export type SuggestionAction =
@@ -437,6 +450,7 @@ export type SuggestionAction =
   | 'build-reps'
   | 'deload'
   | 'return'
+  | 'dup'
   | 'insufficient-data'
 
 // How the lift's recent trajectory tracks against its short-term max-weight goal.
@@ -638,12 +652,69 @@ function deloadSuggestion(lift: LiftKey, last: TopSet, config: SuggestionConfig,
   )
 }
 
+// ---- DUP focus inference -----------------------------------------------------
+
+// UI-facing labels for a focus: a banner title and a one-word training intent.
+export const FOCUS_META: Record<DayFocus, { label: string; intent: string }> = {
+  heavy: { label: 'Heavy day', intent: 'strength' },
+  moderate: { label: 'Moderate day', intent: 'volume' },
+  light: { label: 'Volume day', intent: 'hypertrophy' },
+}
+
+// Classify a rep count into its focus by the configured window ceilings: at/below
+// the heavy window's top is heavy, at/below the moderate window's top is moderate,
+// otherwise light. Uses ceilings (not full ranges) so reps that fall between two
+// windows still classify into the lower one.
+function classifyFocus(reps: number, config: SuggestionConfig): DayFocus {
+  if (reps <= config.dup.windows.heavy[1]) return 'heavy'
+  if (reps <= config.dup.windows.moderate[1]) return 'moderate'
+  return 'light'
+}
+
+// The focus one step further along the undulation cycle.
+function advanceFocus(f: DayFocus, cycle: DayFocus[]): DayFocus {
+  const i = cycle.indexOf(f)
+  return cycle[(i + 1) % cycle.length]
+}
+
+function median(xs: number[]): number {
+  const s = [...xs].sort((a, b) => a - b)
+  const m = Math.floor(s.length / 2)
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
+}
+
+export interface FocusPlan {
+  focus: DayFocus // the inferred focus for the next session
+  from: DayFocus | null // the focus of your most recent training day (null with no history)
+}
+
+// Infer the next session's DUP focus: classify your most recent training day
+// (median of that day's per-lift top-set reps) and undulate one step along the
+// cycle. Global — one focus for the whole next session — matching whole-day
+// undulation. Defaults to the first cycle entry when there's nothing to classify.
+export function nextSessionFocus(rows: SetRow[], config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG): FocusPlan {
+  let latest = ''
+  for (const r of rows) {
+    if (r.lift && !r.isWarmup && r.dateKey > latest) latest = r.dateKey
+  }
+  if (!latest) return { focus: config.dup.cycle[0], from: null }
+  const reps: number[] = []
+  for (const lift of LIFTS) {
+    const t = topWorkingSets(rows, lift.key).find((x) => x.dateKey === latest)
+    if (t) reps.push(t.reps)
+  }
+  if (reps.length === 0) return { focus: config.dup.cycle[0], from: null }
+  const from = classifyFocus(median(reps), config)
+  return { focus: advanceFocus(from, config.dup.cycle), from }
+}
+
 function suggestForLift(
   rows: SetRow[],
   lift: LiftKey,
   config: SuggestionConfig,
   rpeAvailable: boolean,
   now: number,
+  focus: DayFocus,
   goalCtx?: GoalContext,
 ): Suggestion {
   const label = LIFT_BY_KEY.get(lift)?.label ?? lift
@@ -668,12 +739,15 @@ function suggestForLift(
     }
   }
 
-  const last = tops[tops.length - 1]
-  const prev: TopSetSummary = { load: last.load, reps: last.reps, sets: last.sets }
-  const [lo, hi] = config.repRangeByLift[lift] ?? config.repRange
+  // `trueLast` is the actual most-recent session (drives detraining, which ignores
+  // focus); `stream` is the focus-scoped slice of history that progression tracks,
+  // so a heavy day and a light day each follow their own trend instead of blending.
+  const trueLast = tops[tops.length - 1]
+  const truePrev: TopSetSummary = { load: trueLast.load, reps: trueLast.reps, sets: trueLast.sets }
+  const [lo, hi] = config.dup.windows[focus]
   const inc = config.loadIncrement
   const sets = config.workingSets // baseline main-set count for progression/hold/return
-  const stagnant = isStagnant(tops, config.stagnationWindow)
+  const stream = tops.filter((t) => t.reps >= lo && t.reps <= hi)
 
   // Goal pace vs. the short-term max-weight target, if one is set. Goal fields are
   // spread onto every returned suggestion via `g`.
@@ -690,23 +764,48 @@ function suggestForLift(
   // 0. Reversibility / detraining — takes priority. After a layoff past the grace
   // window, back the load off by the retention factor and ramp in, rather than
   // pushing a PR on cold tissue. R(g) = exp(−(g−grace)/τ), floored at minRetention.
-  const gapWeeks = Math.max(0, (now - last.ts) / (7 * 86400000))
+  const gapWeeks = Math.max(0, (now - trueLast.ts) / (7 * 86400000))
   if (gapWeeks > config.detraining.graceWeeks) {
     const R = retentionFactor(gapWeeks, config.detraining)
-    const load = Math.max(inc, Math.round((last.load * R) / inc) * inc)
-    const reps = Math.min(hi, Math.max(lo, last.reps))
+    const load = Math.max(inc, Math.round((trueLast.load * R) / inc) * inc)
+    const reps = Math.min(hi, Math.max(lo, trueLast.reps))
     return {
       ...buildSuggestion(
         lift,
         'return',
         { load, reps, sets },
-        prev,
+        truePrev,
         `~${Math.round(gapWeeks)} wk since your last ${label} — strength fades with time off ` +
           `(reversibility). Ease back to ~${Math.round(R * 100)}% of your last load and rebuild.`,
       ),
       ...g,
     }
   }
+
+  // Cold start for this focus: no sets logged yet in its rep window. Seed a fresh
+  // prescription from current e1RM via the Epley inverse (load = e1RM/(1+r/30)) at
+  // the window's midpoint reps, rather than echoing a session at a different range.
+  if (stream.length === 0) {
+    const reps = Math.round((lo + hi) / 2)
+    const load = Math.max(inc, Math.round(trueLast.bestE1rm / (1 + reps / 30) / inc) * inc)
+    return {
+      ...buildSuggestion(
+        lift,
+        'dup',
+        { load, reps, sets },
+        truePrev,
+        `No ${FOCUS_META[focus].label.toLowerCase()} ${label} sets logged yet — starting from your current ` +
+          `e1RM (~${round1(trueLast.bestE1rm)}kg) at ${reps} reps (daily undulating periodization).`,
+        heavyTopSet(trueLast.bestE1rm, load, config.topSetIntensity, inc),
+      ),
+      ...g,
+    }
+  }
+
+  // Progression tracks the focus stream's own most-recent session.
+  const last = stream[stream.length - 1]
+  const prev: TopSetSummary = { load: last.load, reps: last.reps, sets: last.sets }
+  const stagnant = isStagnant(stream, config.stagnationWindow)
 
   // The heavy specificity top set (SAID / Size Principle) attached to progression &
   // hold suggestions — null on deload/return where the intent is to ease off. Surfaced
@@ -716,7 +815,7 @@ function suggestForLift(
   // 1. Double progression on the top working set — strongest signal.
   if (last.reps >= hi) {
     // 3. RPE (only if tracked): rising effort at the same load/reps → hold.
-    if (rpeAvailable && rpeRisingAtConstant(tops)) {
+    if (rpeAvailable && rpeRisingAtConstant(stream)) {
       return {
         ...buildSuggestion(
           lift,
@@ -779,8 +878,10 @@ function suggestForLift(
     }
   }
 
-  // Below range: hold and build reps, unless it's dragging on (2. deload).
-  const belowRepeated = trailingBelowRange(tops, lo) >= config.belowRangeRepeat
+  // Below range fallback. In practice unreachable — `stream` is scoped to reps in
+  // [lo, hi], so `last.reps >= lo` above always holds and returns. Kept as the
+  // required return and as a safety net if the stream definition ever widens.
+  const belowRepeated = trailingBelowRange(stream, lo) >= config.belowRangeRepeat
   if (belowRepeated || stagnant) {
     const why = belowRepeated
       ? `stuck below ${lo} reps ${config.belowRangeRepeat}+ sessions running`
@@ -808,11 +909,12 @@ export function nextSessionSuggestion(
   goalCtx?: GoalContext,
   config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG,
   now: number = latestTs(rows),
+  focus: DayFocus = nextSessionFocus(rows, config).focus,
 ): Record<LiftKey, Suggestion> {
   const rpeAvailable = hasRpeData(rows)
   const result = {} as Record<LiftKey, Suggestion>
   for (const lift of LIFTS) {
-    result[lift.key] = suggestForLift(rows, lift.key, config, rpeAvailable, now, goalCtx)
+    result[lift.key] = suggestForLift(rows, lift.key, config, rpeAvailable, now, focus, goalCtx)
   }
   return result
 }
