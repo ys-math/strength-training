@@ -1,20 +1,20 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import {
   Area,
   CartesianGrid,
   ComposedChart,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   type TooltipProps,
   XAxis,
   YAxis,
 } from 'recharts'
-import { LIFTS, type LiftKey } from '../lib/types'
+import { LIFT_BY_KEY, type LiftKey } from '../lib/types'
 import { liftSessions, round1 } from '../lib/metrics'
-import { fmtDate, fmtLongDate } from '../lib/format'
+import { fmtDate, fmtLongDate, fmtPlate } from '../lib/format'
 import type { SetRow } from '../lib/types'
-import ChartCard from './ChartCard'
 
 interface DetailPoint {
   dateKey: string
@@ -68,13 +68,24 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
   )
 }
 
-export default function LiftDetail({ rows }: { rows: SetRow[] }) {
-  const [selected, setSelected] = useState<LiftKey>('BP')
-  const lift = LIFTS.find((l) => l.key === selected)!
+// The single-lift drill-down of the Progress card: est. 1RM and the heaviest set on ONE
+// kg axis (never a dual axis — see CLAUDE.md), which is the only view that shows whether
+// e1RM gains are real load or rep inflation. Deliberately independent of MetricMode: it
+// always plots BOTH series, so the header's mode toggle doesn't drive it.
+export default function LiftDetailView({
+  rows,
+  lift: liftKey,
+  goal,
+}: {
+  rows: SetRow[]
+  lift: LiftKey
+  goal?: number | null
+}) {
+  const lift = LIFT_BY_KEY.get(liftKey)!
 
   const data = useMemo<DetailPoint[]>(
     () =>
-      liftSessions(rows, selected).map((s) => ({
+      liftSessions(rows, liftKey).map((s) => ({
         dateKey: s.dateKey,
         ts: s.date.getTime(),
         e1rm: round1(s.bestE1rm),
@@ -82,7 +93,7 @@ export default function LiftDetail({ rows }: { rows: SetRow[] }) {
         reps: s.maxWeightReps,
         sets: s.workingSets,
       })),
-    [rows, selected],
+    [rows, liftKey],
   )
 
   // Progress summary over the plotted span, based on the heaviest set per session.
@@ -98,36 +109,14 @@ export default function LiftDetail({ rows }: { rows: SetRow[] }) {
     return { current: last, gain, pct, perWeek, bestE1rm, sessions: data.length }
   }, [data])
 
-  const selector = (
-    <div className="flex gap-1.5">
-      {LIFTS.map((l) => {
-        const on = l.key === selected
-        return (
-          <button
-            key={l.key}
-            onClick={() => setSelected(l.key)}
-            aria-pressed={on}
-            className="rounded-full px-2.5 py-1 text-xs font-semibold transition-colors"
-            style={{
-              border: '1px solid var(--border)',
-              background: on ? l.color : 'transparent',
-              color: on ? '#fff' : 'var(--text-secondary)',
-            }}
-          >
-            {l.key}
-          </button>
-        )
-      })}
-    </div>
-  )
-
   const gainTone = summary && summary.gain > 0 ? 'var(--delta-good)' : undefined
+  const goalOn = goal != null && goal > 0
 
   return (
-    <ChartCard title={`${lift.label} detail`} subtitle="Est. 1RM vs. heaviest set (kg)" right={selector}>
+    <>
       {summary && (
         <div
-          className="mb-4 grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl p-3 sm:grid-cols-5"
+          className="mb-3 grid grid-cols-2 gap-x-4 gap-y-2 rounded-xl p-3 sm:grid-cols-5"
           style={{ background: 'var(--page)', border: '1px solid var(--border)' }}
         >
           <Stat label="Heaviest now" value={`${summary.current.weight} kg × ${summary.current.reps}`} />
@@ -141,7 +130,7 @@ export default function LiftDetail({ rows }: { rows: SetRow[] }) {
           <Stat label="Best est. 1RM" value={`${summary.bestE1rm} kg`} />
         </div>
       )}
-      <div style={{ width: '100%', height: 300 }}>
+      <div style={{ width: '100%', height: 280 }}>
         <ResponsiveContainer>
           <ComposedChart data={data} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
             <defs>
@@ -164,6 +153,25 @@ export default function LiftDetail({ rows }: { rows: SetRow[] }) {
               stroke="var(--baseline)"
             />
             <Tooltip content={<DetailTooltip color={lift.color} />} />
+            {/* The 3-month target is a max-weight quantity, and the heaviest-set line is
+                always plotted here — so the goal is meaningful in this view regardless of
+                the header's metric mode. */}
+            {goalOn && (
+              <ReferenceLine
+                y={goal}
+                stroke={lift.color}
+                strokeDasharray="4 4"
+                strokeOpacity={0.7}
+                ifOverflow="extendDomain"
+                label={{
+                  value: `Goal ${fmtPlate(goal)}`,
+                  position: 'insideTopLeft',
+                  fill: lift.color,
+                  fontSize: 10,
+                  fontWeight: 700,
+                }}
+              />
+            )}
             <Area
               type="monotone"
               dataKey="e1rm"
@@ -188,6 +196,6 @@ export default function LiftDetail({ rows }: { rows: SetRow[] }) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-    </ChartCard>
+    </>
   )
 }

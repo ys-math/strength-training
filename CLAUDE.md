@@ -48,7 +48,8 @@ strong_workouts.csv ?raw
   set + its reps/set-count, for the max-weight chart), `cumulativeSeries(rows, mode)` and
   `big4Series(rows, mode)` (each lift's / the summed best-to-date value, only climbs),
   `currentPrev`, `weeklyVolume` (ISO week), `sessionVolume` (per training day), `dailyMetrics`,
-  `sessionDetails`, `overallStats`,
+  `focusMix` (training days per intensity band, for the heatmap's mix bar), `sessionDetails`,
+  `overallStats`,
   and `nextSessionSuggestion(rows, goalCtx?, config?, now?, focus?)` (per-lift load × reps heuristic — config
   in `DEFAULT_SUGGESTION_CONFIG`, theory in README's "How suggestions work" / "theory → formula map").
   It also emits a heavy **`topSet`** (SAID/Size Principle, `heavyTopSet` at ~90% e1RM) and a
@@ -57,14 +58,51 @@ strong_workouts.csv ?raw
 - **`src/components/`** — presentational; each takes `rows: SetRow[]` and derives via
   `useMemo`. `Dashboard.tsx` composes them.
 
-### Session volume (`sessionVolume` → `SessionVolumeChart`)
+### Page layout — two zones
 
-Per-**session** tonnage, next to `weeklyVolume`'s per-week tonnage. Same accumulation rule (big four,
-working sets, warmups excluded — so the two cards agree numerically), grouped by `dateKey`. Each
-session carries a `baseline` (mean `total` of the **previous 6 sessions**, `SESSION_BASELINE_WINDOW`),
-a `deltaPct` against it, and `restDays` since the last session. The window is an **expanding** mean
-until 6 priors exist, so only the very first session has a null baseline. Weekly volume answers "am I
-doing enough"; this answers "was that day unusually heavy" — the fatigue question.
+`Dashboard` composes **six** blocks, in two zones (the card set was consolidated from nine; see the
+"merged cards" notes below — do not re-split them):
+
+```
+StatCards                          glance strip
+[ NextSession ‖ SessionLog ]       TODAY  — what to lift / what I lifted
+ProgressChart                      TREND  — All ▾ or a per-lift drill-down
+[ VolumeCard ‖ FrequencyHeatmap ]  TREND
+```
+
+`SessionLog` sits in the *today* zone deliberately: it opens on the latest session by default, which
+is what the deleted `LatestWorkout` card used to render **a second time**. If you find yourself
+wanting a "latest workout" card, that's it — don't re-add one.
+
+### Volume (`weeklyVolume` + `sessionVolume` → `VolumeCard`)
+
+**One card, one quantity, two grains** — chosen by `VolumeGrainToggle` in `ChartCard`'s `right` slot
+(state in `useVolumeGrain` / `src/lib/volumeGrain.ts`, persisted like the metric and heatmap modes).
+Both grains use the **same accumulation rule** (big four, working sets, warmups excluded), so a week's
+bar is exactly the sum of its sessions' bars — they are two readings of one number, which is why they
+are one card and not two. `week` answers "am I doing enough"; `session` answers "was that day
+unusually heavy" — the fatigue question.
+
+`VolumeChart` and `SessionVolumeChart` were **merged** here (they were character-for-character the
+same stacked-bar chart apart from the bucket, the baseline line, and the chip). Don't re-split them.
+
+Session grain only: each session carries a `baseline` (mean `total` of the **previous 6 sessions**,
+`SESSION_BASELINE_WINDOW`), a `deltaPct` against it, and `restDays` since the last session. The window
+is an **expanding** mean until 6 priors exist, so only the very first session has a null baseline. A
+week has no baseline — the weekly question is "enough?", not "unusual?" — so the dashed `Line` is the
+**one** piece of grain-dependent chrome.
+
+**The two grains are deliberately structurally identical**, and this is load-bearing: one-line
+subtitle, a two-line header chip, a span slider, and a one-line footnote — in *both*. Only the text
+and the baseline line differ. The reason is layout, not symmetry for its own sake: the card shares a
+grid row with `FrequencyHeatmap`, which is `h-full`, so **any** height difference between grains made
+the heatmap resize every time you toggled the grain. Keep them the same shape. If you add a row to one
+grain (a chip, a note, a second subtitle line), add its counterpart to the other — or the neighbour
+starts twitching again. `measure.mjs`-style check: the card's height must be equal in both grains at
+1280 / 1024 / 420 px.
+
+Each grain owns its **own slider index** (`weekStart` / `sessionStart`). Sharing one would silently
+reframe the other chart — "session 20" and "week 20" are wildly different dates.
 
 Two things here are load-bearing and easy to break:
 
@@ -74,13 +112,14 @@ Two things here are load-bearing and easy to break:
   bar contains, and the card's whole purpose collapses without it. It's deliberately given a
   different visual role (`--text-muted`, dashed, dotless) so it never reads as a fifth series. Don't
   pattern-match it to the old revert and delete it.
-- **The baseline is computed over the full history, then sliced for display.** `SessionVolumeChart`'s
-  span slider (copied from `ProgressChart`) slices `sessionVolume(rows)` *after* the fact. Computing
+- **The baseline is computed over the full history, then sliced for display.** `VolumeCard`'s span
+  slider (copied from `ProgressChart`) slices `sessionVolume(rows)` *after* the fact. Computing
   it on the visible slice instead would give the first six visible bars a baseline that silently
   changes as you drag the slider — it would look like a data bug, not a code bug.
 
-The card uses a **custom tooltip** rather than the shared `ChartTooltip`, which can only list series;
-this one also prints the session total, the Δ% vs. usual, and the rest taken beforehand. There is
+In the session grain the card uses a **custom tooltip** rather than the shared `ChartTooltip`, which
+can only list series; this one also prints the session total, the Δ% vs. usual, and the rest taken
+beforehand (the week grain keeps `ChartTooltip`). There is
 deliberately **no spike badge or threshold outline**: volume trends upward through any progression
 block (July 2026 sessions run +21 % to +177 % over baseline), so a fixed threshold would fire
 constantly and train you to ignore it.
@@ -119,9 +158,9 @@ Sets and volume are *ordinal*, so they read off the sequential ramp. **Intensity
 *categorically*** — one hue per focus, cool → hot (`--focus-light/-moderate/-heavy`, blue/green/red,
 redefined in every `[data-theme]` block; `cozy` re-tones them to dusty-blue/sage/terracotta). It rode
 the ramp originally (`FOCUS_SHADE` → `--seq-1/2/4`, on the theory that intensity is ordinal), and that
-failed on both counts: at 13 px, three shades of one blue don't separate — so the heavy/light
-*distribution*, the whole point of the mode, didn't read at a glance — and a darker blue says nothing
-about what "heavy" *means*. **Red/green is a known color-vision collision** (moderate and heavy are
+failed on both counts: at small cell sizes, three shades of one blue don't separate — so the
+heavy/light *distribution*, the whole point of the mode, didn't read at a glance — and a darker blue
+says nothing about what "heavy" *means*. **Red/green is a known color-vision collision** (moderate and heavy are
 exactly the pair that merges under deuteranopia); on a single-reader dashboard that cost was weighed
 and accepted, and the tooltip names the focus in words in every mode as the fallback. It's a choice,
 not an oversight — don't "fix" it back to a ramp.
@@ -130,12 +169,30 @@ not an oversight — don't "fix" it back to a ramp.
 focus → label map). `NextSession`'s `FocusBanner` wears the same hue as a chip, so the heatmap and the
 banner can't disagree about what "heavy" looks like. Never inline a focus hex in a component.
 
-Mode-dependent chrome is the grid and the legend — and the legend changes *shape*, not just captions:
-a captioned ramp (`Less ▓▓▓▓▓ More`) for the ordinal modes, three **named** swatches
-(`■ Light ■ Moderate ■ Heavy`) for the categorical one, since unlabeled hues would be undecodable
-(nothing about green says "moderate"). Nothing else is mode-dependent: the title and frequency chips
-are true in every mode. The tooltip **always prints all three metrics** regardless of mode — color is
-for scanning, so reading a single day should never require a toggle.
+**The cells are a fixed 13 px, and the card's leftover height is filled with *information*, not with
+bigger cells.** This card shares a grid row with `VolumeCard` and is `h-full`, so it inherits that
+card's height and had ~176 px of slack that `justify-between` split into two conspicuous voids.
+Inflating the cells to fill it (`minmax(13px, 40px)` + `aspect-square`) was tried and **rejected — it
+read as oversized**; a contribution calendar is meant to be small. The slack is instead spent on the
+three stat chips (deliberately large) and the **Intensity-mix bar**. Slack is now ~36 px, i.e. ordinary
+spacing. If you change either card's height, re-check this one for voids.
+
+**The Intensity-mix bar** (`focusMix` in `metrics.ts`) is the distribution behind the Intensity mode:
+one proportion bar plus `Light n (x%) · Moderate n · Heavy n`. It counts `dailyMetrics().focus`, the
+*same* per-day classification the grid colors by and the DUP engine undulates on — so the bar, the
+calendar, and the Next-session `FocusBanner` can never disagree about what a day was. A row of three
+counts was considered; the bar won because the **balance** ("I'm 42 % heavy") is the actionable read,
+and three numbers don't show it. It is shown in **every** mode, which is what lets the legend drop its
+swatches (below).
+
+Mode-dependent chrome is the grid and the legend. The ordinal modes get a captioned ramp
+(`Less ▓▓▓▓▓ More`). The categorical one **no longer repeats the three named swatches** — the mix bar
+above already names all three hues *and* gives their counts, so the legend would have said it twice;
+it now just points there. (Unlabeled hues would still be undecodable — nothing about green says
+"moderate" — the labels simply live in the mix bar now.) Nothing else is mode-dependent: the title,
+the frequency chips, and the mix bar are true in every mode. The tooltip **always prints all three
+metrics** regardless of mode — color is for scanning, so reading a single day should never require a
+toggle.
 
 ### Metric mode (est. 1RM vs. actual max weight)
 
@@ -152,6 +209,28 @@ The `StatCards` per-lift "current PR" figure still comes from `cumulativeSeries`
 `nextSessionSuggestion` (`projectedE1rm` in e1rm mode, `projectedWeight` in max-weight),
 drawn to a synthetic future date; tooltips ignore any `__p` dataKey.
 
+### Progress scope (`ProgressChart` ⊃ `LiftDetail`)
+
+`ProgressChart` owns a local **`Scope = 'all' | LiftKey`**. `'all'` is the four-line chart above; a
+`LiftKey` renders `LiftDetailView` (`LiftDetail.tsx` — the old per-lift card, **unwrapped**: no
+`ChartCard`, no selector of its own) in the same card. The two views are never needed at once, which
+is why they're one card and not two.
+
+Three things here are load-bearing:
+
+- **The drill-down deliberately ignores `MetricMode`.** It always plots *both* e1RM (`Area`) and the
+  heaviest set (dashed `Line`) on **one kg axis** — the only view in the app where the two are
+  comparable, and so the only way to see whether an e1RM gain is real load or rep inflation. (Never a
+  dual axis; see Conventions.) The consequence is accepted and intentional: in this scope the header's
+  `ModeToggle` still drives `StatCards` but visibly does nothing to the chart. Don't "fix" that by
+  making the detail mode-aware — that deletes the view's entire reason to exist.
+- **The scope selector is a separate control from the legend chips.** The chips *multi-select*
+  (hide/show lines) and must keep doing so. Overloading a chip click with "drill down" too would make
+  neither interaction predictable.
+- **The Goals switch is *not* gated on max-weight mode in the drill-down** (it is in `'all'`, where
+  `goalsOn = mode === 'maxWeight' && showGoals`). A goal is a max-weight quantity, and the drill-down
+  always plots the heaviest-set line — so the target line is meaningful there in either mode.
+
 `Suggestion` (from `nextSessionSuggestion`) is structured, not a headline string: it carries
 the `prev` top set, target `load/reps/sets`, per-field deltas, and the projections. The routine
 has a fixed **baseline shape — 2–3 warmup sets, 3 main working sets, 1 heavy top set**
@@ -162,14 +241,12 @@ working set or on a deload/return. `NextSession` builds the **full ordered set l
 via `sessionPlan(suggestion)` in `metrics.ts` (pure): `warmupRamp(workLoad)` (empty bar → ~60/85 %
 ramp, snapped to the plate, only sets lighter than the working load — collapses to 2 sets for a
 light load) → the working sets → the heavy `topSet`.
-`PlanSet { kind: 'warmup' | 'work' | 'top'; weight; reps }`. It renders in the **same compact
-format as `LatestWorkout`** — a header (color chip + label, pace/action tags) plus one wrapping row
-of `groupSets`-collapsed `SetChip` pills (W-prefixed warmups, then working, then a `top` divider +
-top-set pill, then the `DeltaBadge`). Both cards share `SetChip` / `groupSets` from
-`components/SetChip.tsx` (`groupSets` is typed to `{ weight, reps }[]` so it groups both `SetDetail`
-and `PlanSet`). `LatestWorkout` renders warmup chips **before** the working-set chips (the order
-they're actually done in) with no divider label — the `W` prefix on each chip (from `SetChip`'s
-`warmup` prop) is identification enough.
+`PlanSet { kind: 'warmup' | 'work' | 'top'; weight; reps }`. It renders as a header (color chip +
+label, pace/action tags) plus one wrapping row of `groupSets`-collapsed `SetChip` pills (W-prefixed
+warmups, then working, then a `top` divider + top-set pill, then the `DeltaBadge`). `SetChip` /
+`groupSets` live in `components/SetChip.tsx` (`groupSets` is typed to `{ weight, reps }[]` so it
+groups both `SetDetail` and `PlanSet`) and are **shared with `SessionLog`**, so the plan you're about
+to do and the history you already did are legible in the same visual grammar side by side.
 
 **Daily undulating periodization (DUP).** The engine is **always** DUP — one **global focus** per
 next session, `'heavy' | 'moderate' | 'light'` (rep windows `[3,5]/[6,8]/[9,12]` in

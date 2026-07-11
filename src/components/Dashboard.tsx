@@ -5,15 +5,13 @@ import { fmtLongDate } from '../lib/format'
 import { quarterCheckpoints, weeksUntil } from '../lib/goals'
 import { useMetricMode } from '../hooks/useMetricMode'
 import { useHeatmapMetric } from '../hooks/useHeatmapMetric'
+import { useVolumeGrain } from '../hooks/useVolumeGrain'
 import StatCards from './StatCards'
-import LatestWorkout from './LatestWorkout'
 import NextSession from './NextSession'
-import ProgressChart from './ProgressChart'
-import VolumeChart from './VolumeChart'
-import SessionVolumeChart from './SessionVolumeChart'
-import FrequencyHeatmap from './FrequencyHeatmap'
-import LiftDetail from './LiftDetail'
 import SessionLog from './SessionLog'
+import ProgressChart from './ProgressChart'
+import VolumeCard from './VolumeCard'
+import FrequencyHeatmap from './FrequencyHeatmap'
 import ModeToggle from './ModeToggle'
 import ThemeSwitcher from './ThemeSwitcher'
 
@@ -21,6 +19,7 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
   const stats = useMemo(() => overallStats(rows), [rows])
   const { mode, setMode } = useMetricMode()
   const { metric: heatmapMetric, setMetric: setHeatmapMetric } = useHeatmapMetric()
+  const { grain: volumeGrain, setGrain: setVolumeGrain } = useVolumeGrain()
 
   // Make the next-session suggestion goal-aware against the recommended short-term
   // target (due at the next calendar quarter-end). Computed once here, then passed to
@@ -58,20 +57,25 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
         <ModeToggle mode={mode} setMode={setMode} />
       </header>
 
+      {/* Two zones, in reading order. The glance strip answers "am I progressing" in a
+          second; TODAY answers "what do I lift"; TREND is the reference you drill into.
+          Session log sits beside Next session — it opens on the latest session, so the
+          pair reads "here's what I did / here's what to do" without a duplicate card. */}
       <div className="space-y-4">
         <StatCards rows={rows} mode={mode} />
+
+        {/* TODAY */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <LatestWorkout rows={rows} />
           <NextSession rows={rows} suggestions={suggestions} />
+          <SessionLog rows={rows} />
         </div>
+
+        {/* TREND */}
         <ProgressChart rows={rows} mode={mode} suggestions={suggestions} />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <VolumeChart rows={rows} />
+          <VolumeCard rows={rows} grain={volumeGrain} setGrain={setVolumeGrain} />
           <FrequencyHeatmap rows={rows} metric={heatmapMetric} setMetric={setHeatmapMetric} />
         </div>
-        <SessionVolumeChart rows={rows} />
-        <LiftDetail rows={rows} />
-        <SessionLog rows={rows} />
       </div>
 
       <footer className="mt-8 text-center text-xs" style={{ color: 'var(--text-muted)' }}>

@@ -11,6 +11,8 @@
   /* Surfaces & ink */
   --page:           #0d0d0d;
   --surface-1:      #1a1a19;
+  /* A step above surface-1: inert track behind sliders and switches. */
+  --surface-2:      #2c2c2a;
   --text-primary:   #ffffff;
   --text-secondary: #c3c2b7;
   --text-muted:     #898781;
@@ -45,6 +47,7 @@
 
   --page:           #f7f7f5;
   --surface-1:      #ffffff;
+  --surface-2:      #e7e6e1;
   --text-primary:   #141412;
   --text-secondary: #46453e;
   --text-muted:     #7a786e;
@@ -77,6 +80,7 @@
   /* Warm paper & wood tones. */
   --page:           #f2e8da;
   --surface-1:      #fbf3e7;
+  --surface-2:      #e3d3ba;
   --text-primary:   #3d2b1f;
   --text-secondary: #6b5240;
   --text-muted:     #9c8570;

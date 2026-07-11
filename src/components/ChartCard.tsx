@@ -14,7 +14,7 @@ export default function ChartCard({
 }) {
   return (
     <section
-      className="flex h-full flex-col rounded-2xl p-4 sm:p-5"
+      className="flex h-full flex-col rounded-2xl p-3 sm:p-4"
       style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
     >
       <div className="mb-3 flex items-start justify-between gap-3">
@@ -30,7 +30,9 @@ export default function ChartCard({
         </div>
         {right}
       </div>
-      <div className="flex-1">{children}</div>
+      {/* min-h-0 so a scrolling child (SessionLog) can shrink below its content height
+          and stretch to the row instead of blowing the card out. */}
+      <div className="min-h-0 flex-1">{children}</div>
     </section>
   )
 }

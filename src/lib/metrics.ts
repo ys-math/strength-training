@@ -382,6 +382,30 @@ export function quantileThresholds(values: number[]): number[] {
   return [0.25, 0.5, 0.75].map((q) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))])
 }
 
+/** How your training days divide across the three intensity bands. */
+export interface FocusMix {
+  light: number
+  moderate: number
+  heavy: number
+  /** Days that carried a focus at all — the denominator for the proportion bar. */
+  total: number
+}
+
+// The distribution behind the heatmap's Intensity mode: the same per-day classification
+// (dayFocusMap → classifyFocus) the grid colors by and the DUP engine undulates on, just
+// counted. So the mix bar, the calendar, and the Next-session focus banner can never
+// disagree about what a day was. Days with no classifiable top set are skipped, so
+// `total` may be < the session count.
+export function focusMix(rows: SetRow[], config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG): FocusMix {
+  const mix: FocusMix = { light: 0, moderate: 0, heavy: 0, total: 0 }
+  for (const day of dailyMetrics(rows, config).values()) {
+    if (!day.focus) continue
+    mix[day.focus] += 1
+    mix.total += 1
+  }
+  return mix
+}
+
 // Bucket 0 is reserved for "no training". Any day with tonnage lands in 1..4, even
 // when every day is identical (all thresholds equal) — a real session must never
 // render in the empty color.

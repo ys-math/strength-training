@@ -13,36 +13,47 @@ CSV export. Modern dark UI, deployed free on GitHub Pages.
 - **Metric toggle** — flip the headline number, the PR cards, and the main chart between
   **estimated 1RM** and **actual max weight lifted**; your choice is remembered.
 - **Big 4 total** — combined est. 1RM (or max weight) across the four lifts, one climbing number.
-- **Progress over time** — per-lift headline chart of the best set each session (Epley e1RM,
-  or actual heaviest weight — hover a point for its reps and set count). A dotted line extends
-  each lift to where it would land next session if you hit the suggested goal, and a **span
-  slider** below the chart zooms the visible date range.
-- **Goal lines** — in max-weight mode, a switch overlays each lift’s **3-month goal** (the
-  recommended target for the current fixed calendar quarter) as a dashed horizontal line on the
-  chart (see [How goals work](#how-goals-work)).
+The page reads as two zones: **today** (what to lift, and what you last lifted) and **trend**
+(whether it's working).
+
 - **PR cards** — the PR in the active metric and a from-previous-PR delta.
-- **Latest workout** — the most recent session in full: every exercise, set, and volume, as chips.
-- **Next session** — a **full, ordered plan** per lift shown as set chips (same compact style as
-  Latest workout): a warmup ramp, the working sets, and a **heavy top set** for max-strength
-  specificity. The whole session **auto-undulates (DUP)** — its focus (heavy / moderate / light) is
-  inferred from your recent training and shown as a banner — with the change vs. last time
-  highlighted, an automatic **back-off after a layoff**, and a goal-pace chip (see
+- **Next session** — a **full, ordered plan** per lift shown as set chips: a warmup ramp, the
+  working sets, and a **heavy top set** for max-strength specificity. The whole session
+  **auto-undulates (DUP)** — its focus (heavy / moderate / light) is inferred from your recent
+  training and shown as a banner — with the change vs. last time highlighted, an automatic
+  **back-off after a layoff**, and a goal-pace chip (see
   [How suggestions work](#how-suggestions-work) and
   [the theory → formula map](#the-science-theory--formula-map)).
-- **Weekly volume** — working tonnage (weight × reps), warmup sets excluded.
+- **Session log** — every exercise, set, and volume per workout, newest first and already open,
+  so it doubles as "what I did last time" right beside the plan.
+- **Progress** — the headline chart, with an **All / BP / SQ / DL / OHP** scope selector:
+  - **All** — every lift's best set each session (Epley e1RM, or actual heaviest weight — hover a
+    point for its reps and set count). A dotted line extends each lift to where it would land next
+    session if you hit the suggested goal, and a **span slider** zooms the visible date range.
+    In max-weight mode a **Goals** switch overlays each lift's **3-month goal** (the recommended
+    target for the current fixed calendar quarter) as a dashed horizontal line
+    (see [How goals work](#how-goals-work)).
+  - **A single lift** — that lift's est. 1RM *and* heaviest set on one kg axis, plus a summary
+    strip (heaviest now, gain, rate, best e1RM) and its goal line. This view always shows both
+    series, so it's the one place you can see whether an e1RM gain is real load or just more reps —
+    which is why it ignores the metric toggle.
+- **Volume** — working tonnage (weight × reps), warmup sets excluded, at either grain (each with its
+  own span slider and a headline readout):
+  - **Week** — *"am I doing enough?"* The chip reads last week's tonnage.
+  - **Session** — the same tonnage per training day: *"was that day unusually heavy?"*, the question
+    that flags creeping fatigue. A dashed line tracks your **previous-6-session average** (≈2 weeks)
+    and the chip reads how the last session compares to it. Rest days are collapsed (the axis is
+    training days, not the calendar); hover a bar for the per-lift split, the deviation from your
+    usual, and the rest you took beforehand.
+
+  Both grains use the same big-four, warmups-excluded rule, so a week's bar is exactly the sum of
+  its sessions' bars.
 - **Training frequency** — GitHub-style calendar heatmap, with a **Sets / Volume / Intensity**
   switch that re-colors the same grid: working sets per day, tonnage that day (shaded against
   your own quartiles), or how heavy the day was (heavy / moderate / light, by the same rule the
   next-session plan undulates on). No day is ever hidden — only the shade's meaning changes.
-- **Session volume** — the same tonnage, but per training session, so you can see how hard any one
-  day ran. A dashed line tracks your **previous-6-session average** (≈2 weeks), and a chip reads how
-  the last session compares to it. Weekly volume answers *"am I doing enough?"*; this answers *"was
-  that day unusually heavy?"* — the question that flags creeping fatigue. Rest days are collapsed
-  (the axis is training days, not the calendar); hover a bar for the per-lift split, the deviation
-  from your usual, and the rest you took beforehand. Same big-four, warmups-excluded rule as Weekly
-  volume, so the two cards agree.
-- **Per-lift detail** — est. 1RM vs. heaviest set for any single lift.
-- **Session log** — every exercise, set, and volume per workout.
+  An **intensity-mix bar** shows what share of your training days fell in each band — the check on
+  whether you're actually undulating rather than grinding one intensity.
 - **Themes** — switch between Modern Dark, Modern Light, and Cozy; your choice is remembered.
 
 Estimated 1RM uses the Epley formula $E = w\left(1 + \dfrac{r}{30}\right)$, for weight $w$ and reps $r$.
@@ -142,7 +153,7 @@ the top set), and the top set is likewise omitted whenever it wouldn't be heavie
 set. The **warmup ramp** is an empty-bar set, then ≈ 60 % and ≈ 85 % of the working load with
 descending reps, each snapped to the nearest plate and skipped once it would be redundant with the
 bar or the working load — so a light working load collapses the ramp to 2 sets or fewer. Identical
-sets collapse to one `weight × reps ×count` chip (same style as Latest workout). The warmup is a
+sets collapse to one `weight × reps ×count` chip (same style as the Session log). The warmup is a
 conventional ramp for joint prep and rehearsal, not part of the progression logic — it carries no
 training-effect claim.
 
@@ -291,24 +302,27 @@ src/
     theme.ts                 the selectable UI themes (dark / light / cozy)
     mode.ts                  metric mode (est. 1RM vs. actual max weight)
     heatmapMetric.ts         heatmap color mode (sets / volume / intensity)
+    volumeGrain.ts           volume card grain (week / session)
     goals.ts                 goal horizons (3/6/12 mo) + fixed calendar-quarter checkpoints
   hooks/
     useTheme.ts              reads/writes the active theme (data-theme + localStorage)
     useMetricMode.ts         reads/writes the active metric mode (localStorage)
     useHeatmapMetric.ts      reads/writes the heatmap color mode (localStorage)
+    useVolumeGrain.ts        reads/writes the volume card's grain (localStorage)
   components/
-    Dashboard.tsx            page layout; computes goal-aware suggestions once, passes them down
+    Dashboard.tsx            page layout (today / trend zones); computes goal-aware suggestions once
     StatCards.tsx            Big-4 total + per-lift PR cards
-    LatestWorkout.tsx        most recent session in full (always expanded)
     NextSession.tsx          per-lift load × reps suggestion (prev → target chips) + pace chip
     SetChip.tsx              shared "weight kg × reps ×count" pill + groupSets
-    ProgressChart.tsx        headline chart: dotted next-session projection, 3-mo goal lines (toggle),
-                             span slider; est. 1RM ⇄ max weight
-    VolumeChart.tsx          weekly stacked tonnage bars
+    ProgressChart.tsx        headline chart + All/per-lift scope selector: dotted next-session
+                             projection, 3-mo goal lines (toggle), span slider; est. 1RM ⇄ max weight
+    LiftDetail.tsx           the per-lift drill-down of ProgressChart (est. 1RM vs. heaviest set,
+                             one axis, both series always — ignores metric mode)
+    VolumeCard.tsx           stacked tonnage bars at week or session grain (+ trailing baseline)
+    VolumeGrainToggle.tsx    week / session switch for the volume card
     FrequencyHeatmap.tsx     calendar heatmap (plain divs, not Recharts); sets / volume / intensity shading
     HeatmapMetricToggle.tsx  sets / volume / intensity switch for the heatmap
-    LiftDetail.tsx           per-lift est. 1RM vs. heaviest set
-    SessionLog.tsx           collapsible full history of every session
+    SessionLog.tsx           collapsible full history of every session (latest open by default)
     ModeToggle.tsx           est. 1RM / max weight switch in the header
     ThemeSwitcher.tsx        theme picker in the footer
     ChartCard.tsx / Tooltip.tsx   shared chart chrome

@@ -1,7 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { epley } from './parse'
 import type { LiftKey, SetRow } from './types'
-import { dailyMetrics, dayFocusMap, nextSessionFocus, quantileThresholds, volumeBucket } from './metrics'
+import {
+  dailyMetrics,
+  dayFocusMap,
+  focusMix,
+  nextSessionFocus,
+  quantileThresholds,
+  volumeBucket,
+} from './metrics'
 
 let order = 0
 
@@ -97,6 +104,43 @@ describe('dayFocusMap — one definition of heavy/moderate/light', () => {
       ...session('2026-01-10', 'DL', 120, 10, 1),
     ]
     expect(dayFocusMap(rows).get('2026-01-10')).toBe('light')
+  })
+})
+
+describe('focusMix — the distribution behind the Intensity mode', () => {
+  it('counts each training day into exactly one band, by the same rule the grid colors by', () => {
+    const rows = [
+      ...session('2026-01-05', 'BP', 100, 4), // heavy   (3–5 reps)
+      ...session('2026-01-07', 'BP', 80, 7), //  moderate (6–8)
+      ...session('2026-01-09', 'BP', 60, 10), // light    (9–12)
+      ...session('2026-01-12', 'BP', 100, 3), // heavy
+    ]
+    const mix = focusMix(rows)
+    expect(mix).toEqual({ light: 1, moderate: 1, heavy: 2, total: 4 })
+    // The bar's denominator must be the sum of its segments, or the percentages lie.
+    expect(mix.light + mix.moderate + mix.heavy).toBe(mix.total)
+  })
+
+  it('agrees with dayFocusMap day-for-day — the mix and the calendar cannot disagree', () => {
+    const rows = [
+      ...session('2026-01-05', 'BP', 100, 4),
+      ...session('2026-01-07', 'SQ', 80, 7),
+      ...session('2026-01-09', 'DL', 60, 10),
+    ]
+    const focuses = [...dayFocusMap(rows).values()]
+    const mix = focusMix(rows)
+    for (const f of ['light', 'moderate', 'heavy'] as const) {
+      expect(mix[f]).toBe(focuses.filter((x) => x === f).length)
+    }
+  })
+
+  it('ignores warmups and non-big-four work, and is empty for no history', () => {
+    expect(focusMix([])).toEqual({ light: 0, moderate: 0, heavy: 0, total: 0 })
+    const rows = [
+      set('2026-01-05', 'BP', 60, 5, { warmup: true }),
+      set('2026-01-05', null, 40, 12, { exercise: 'Curl' }),
+    ]
+    expect(focusMix(rows).total).toBe(0)
   })
 })
 

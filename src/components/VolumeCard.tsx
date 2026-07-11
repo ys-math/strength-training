@@ -11,10 +11,19 @@ import {
 } from 'recharts'
 import type { TooltipProps } from 'recharts'
 import { LIFTS } from '../lib/types'
-import { sessionVolume, SESSION_BASELINE_WINDOW, type SessionVolume } from '../lib/metrics'
+import {
+  sessionVolume,
+  weeklyVolume,
+  SESSION_BASELINE_WINDOW,
+  type SessionVolume,
+  type WeekVolume,
+} from '../lib/metrics'
 import { fmtLongDate, fmtTonnage } from '../lib/format'
 import type { SetRow } from '../lib/types'
+import type { VolumeGrain } from '../lib/volumeGrain'
 import ChartCard from './ChartCard'
+import ChartTooltip from './Tooltip'
+import VolumeGrainToggle from './VolumeGrainToggle'
 
 const BASELINE_KEY = 'baseline'
 
@@ -22,9 +31,9 @@ function fmtDelta(pct: number): string {
   return `${pct > 0 ? '+' : ''}${pct}%`
 }
 
-// Custom rather than the shared ChartTooltip: this card has to say more than a list of
-// series — the session's standing against its trailing baseline, and the rest that
-// preceded it, are the whole point of the card.
+// Custom rather than the shared ChartTooltip: the session grain has to say more than a
+// list of series — the session's standing against its trailing baseline, and the rest
+// that preceded it, are the whole point of that grain.
 function SessionTooltip({ active, payload }: TooltipProps<number, string>) {
   if (!active || !payload || payload.length === 0) return null
   const s = payload[0].payload as SessionVolume
@@ -70,40 +79,88 @@ function SessionTooltip({ active, payload }: TooltipProps<number, string>) {
   )
 }
 
-export default function SessionVolumeChart({ rows }: { rows: SetRow[] }) {
+// One card, one quantity (working tonnage — big four, warmups excluded), two grains.
+// A week's bar is the sum of its sessions' bars, so the two readings always agree.
+export default function VolumeCard({
+  rows,
+  grain,
+  setGrain,
+}: {
+  rows: SetRow[]
+  grain: VolumeGrain
+  setGrain: (g: VolumeGrain) => void
+}) {
+  const weeks = useMemo(() => weeklyVolume(rows), [rows])
   // Computed over the full history, then sliced for display — so the baseline a session
   // is judged against never changes as the span slider moves.
-  const data = useMemo(() => sessionVolume(rows), [rows])
-  const [startIdx, setStartIdx] = useState(0)
+  const sessions = useMemo(() => sessionVolume(rows), [rows])
+  // One slider position per grain: reusing a single index across grains would silently
+  // reframe the other chart (session 20 is a very different date than week 20).
+  const [weekStart, setWeekStart] = useState(0)
+  const [sessionStart, setSessionStart] = useState(0)
 
+  const isSession = grain === 'session'
   const lastKey = LIFTS[LIFTS.length - 1].key
+
+  // The two grains are built to be structurally IDENTICAL — same subtitle shape, same
+  // header chip, same slider, same footnote — so the card's height cannot change when you
+  // toggle. That matters beyond this card: it shares a grid row with the heatmap, which is
+  // h-full and would otherwise resize in sympathy every time you flipped the grain.
+  const data = isSession ? sessions : weeks
+  const startIdx = isSession ? sessionStart : weekStart
+  const setStartIdx = isSession ? setSessionStart : setWeekStart
   const maxStart = Math.max(0, data.length - 2)
   const start = Math.min(startIdx, maxStart)
-  const shown = start > 0 ? data.slice(start) : data
   const canSlide = data.length >= 3
-  const windowStart = shown.length ? fmtLongDate(shown[0].dateKey) : ''
-  const windowEnd = data.length ? fmtLongDate(data[data.length - 1].dateKey) : ''
+  const shown = start > 0 ? data.slice(start) : data
 
-  const last = data[data.length - 1]
-  const chip =
-    last?.deltaPct != null ? (
+  // Both grains label the visible window; session by date, week by its Monday label.
+  const spanLabel = (d: (typeof data)[number] | undefined) => {
+    if (!d) return ''
+    return isSession ? fmtLongDate((d as SessionVolume).dateKey) : (d as WeekVolume).label
+  }
+  const windowStart = spanLabel(shown[0])
+  const windowEnd = spanLabel(data[data.length - 1])
+
+  const lastSession = sessions[sessions.length - 1]
+  const lastWeek = weeks[weeks.length - 1]
+
+  // The grain toggle is a *control* and stays pinned to the same corner; the readout chip
+  // sits beneath it. Both grains carry a chip of the same two-line shape, so neither the
+  // toggle nor the card's height moves — the week grain reads its last week's tonnage,
+  // the session grain how that session stood against its trailing baseline.
+  const chip = (
+    <div className="flex flex-col items-end gap-1.5">
+      <VolumeGrainToggle grain={grain} setGrain={setGrain} />
       <div className="rounded-lg px-2.5 py-1.5 text-right" style={{ border: '1px solid var(--border)' }}>
         <div className="text-sm font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
-          {fmtDelta(last.deltaPct)}
+          {isSession
+            ? lastSession?.deltaPct != null
+              ? fmtDelta(lastSession.deltaPct)
+              : '—'
+            : lastWeek
+              ? fmtTonnage(lastWeek.total)
+              : '—'}
         </div>
-        <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-          Last session vs. usual
+        <div className="whitespace-nowrap text-[10px]" style={{ color: 'var(--text-muted)' }}>
+          {isSession ? 'Last session vs. usual' : 'Last week’s tonnage'}
         </div>
       </div>
-    ) : undefined
+    </div>
+  )
+
+  // Kept to one line in BOTH grains (see the height note above) — the dashed baseline is
+  // explained in the footnote, which likewise exists in both.
+  const subtitle = isSession
+    ? 'Working tonnage (weight × reps) per session, warmups excluded'
+    : 'Working tonnage (weight × reps) per week, warmups excluded'
+  const footnote = isSession
+    ? `Dashed = your previous-${SESSION_BASELINE_WINDOW}-session average · rest days collapsed.`
+    : 'ISO weeks, Monday-started · a week = the sum of its sessions.'
 
   return (
-    <ChartCard
-      title="Session volume"
-      subtitle={`Working tonnage per session (weight × reps), warmups excluded — dashed line is your previous-${SESSION_BASELINE_WINDOW}-session average`}
-      right={chip}
-    >
-      <div style={{ width: '100%', height: 300 }}>
+    <ChartCard title="Volume" subtitle={subtitle} right={chip}>
+      <div style={{ width: '100%', height: 280 }}>
         <ResponsiveContainer>
           <ComposedChart data={shown} margin={{ top: 8, right: 8, bottom: 4, left: 4 }} barCategoryGap="20%">
             <CartesianGrid stroke="var(--gridline)" vertical={false} />
@@ -114,7 +171,10 @@ export default function SessionVolumeChart({ rows }: { rows: SetRow[] }) {
               stroke="var(--baseline)"
               tickFormatter={(v: number) => (v >= 1000 ? `${v / 1000}t` : `${v}`)}
             />
-            <Tooltip cursor={{ fill: 'var(--hover-tint)' }} content={<SessionTooltip />} />
+            <Tooltip
+              cursor={{ fill: 'var(--hover-tint)' }}
+              content={isSession ? <SessionTooltip /> : <ChartTooltip valueFormatter={fmtTonnage} />}
+            />
             {LIFTS.map((lift) => (
               <Bar
                 key={lift.key}
@@ -128,20 +188,23 @@ export default function SessionVolumeChart({ rows }: { rows: SetRow[] }) {
                 isAnimationActive={false}
               />
             ))}
-            {/* A moving reference the bars are measured against — not a restatement of the
-                stack (that would just retrace the bar tops). Muted and dashed so it reads
-                as a gridline-like benchmark, not as a fifth series. */}
-            <Line
-              dataKey={BASELINE_KEY}
-              name="Usual"
-              stroke="var(--text-muted)"
-              strokeDasharray="4 3"
-              strokeWidth={1.5}
-              dot={false}
-              activeDot={false}
-              connectNulls={false}
-              isAnimationActive={false}
-            />
+            {/* Session grain only: a moving reference the bars are measured against — not a
+                restatement of the stack (that would just retrace the bar tops). Muted and
+                dashed so it reads as a gridline-like benchmark, not as a fifth series.
+                A week has no such baseline — the weekly question is "enough?", not "unusual?". */}
+            {isSession && (
+              <Line
+                dataKey={BASELINE_KEY}
+                name="Usual"
+                stroke="var(--text-muted)"
+                strokeDasharray="4 3"
+                strokeWidth={1.5}
+                dot={false}
+                activeDot={false}
+                connectNulls={false}
+                isAnimationActive={false}
+              />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -166,6 +229,10 @@ export default function SessionVolumeChart({ rows }: { rows: SetRow[] }) {
           </span>
         </div>
       )}
+
+      <p className="mt-2 truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
+        {footnote}
+      </p>
     </ChartCard>
   )
 }

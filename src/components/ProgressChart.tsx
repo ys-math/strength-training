@@ -23,6 +23,10 @@ import { fmtDate, fmtLongDate, fmtPlate } from '../lib/format'
 import type { SetRow } from '../lib/types'
 import type { MetricMode } from '../lib/mode'
 import ChartCard from './ChartCard'
+import LiftDetailView from './LiftDetail'
+
+// What the card plots: all four lifts against each other, or one lift in depth.
+type Scope = 'all' | LiftKey
 
 const tipClass = 'rounded-lg px-3 py-2 text-xs shadow-lg'
 const tipStyle = { background: 'var(--page)', border: '1px solid var(--border)', color: 'var(--text-primary)' }
@@ -203,6 +207,7 @@ export default function ProgressChart({
   const [hidden, setHidden] = useState<Set<LiftKey>>(new Set())
   const [showGoals, setShowGoals] = useState(true)
   const [startIdx, setStartIdx] = useState(0)
+  const [scope, setScope] = useState<Scope>('all')
 
   // Short-term (next fixed calendar quarter) recommended max-weight goal per lift, and
   // its due date — drawn as horizontal target lines in max-weight mode.
@@ -331,7 +336,7 @@ export default function ProgressChart({
     })
 
   const legend = (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap justify-end gap-1.5">
       {LIFTS.map((lift) => {
         const off = hidden.has(lift.key)
         const current = data[lastIndex[lift.key]]?.[lift.key]
@@ -377,23 +382,79 @@ export default function ProgressChart({
     </button>
   )
 
-  const controls = (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {legend}
-      {mode === 'maxWeight' && goalSwitch}
+  // Scope selector — a *separate* control from the legend chips on purpose. The chips
+  // multi-select (hide/show lines); drilling down is a different interaction, and
+  // overloading a chip click with both would make neither predictable.
+  const scopeSelector = (
+    <div
+      className="inline-flex rounded-full p-0.5"
+      role="group"
+      aria-label="Chart scope"
+      style={{ border: '1px solid var(--border)', background: 'var(--surface-1)' }}
+    >
+      {([{ key: 'all' as const, label: 'All' }, ...LIFTS.map((l) => ({ key: l.key, label: l.key }))]).map((s) => {
+        const on = s.key === scope
+        const tint = s.key === 'all' ? 'var(--text-primary)' : LIFT_BY_KEY.get(s.key as LiftKey)!.color
+        return (
+          <button
+            key={s.key}
+            type="button"
+            onClick={() => setScope(s.key as Scope)}
+            aria-pressed={on}
+            className="rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors"
+            style={{
+              background: on ? tint : 'transparent',
+              color: on ? (s.key === 'all' ? 'var(--page)' : '#fff') : 'var(--text-muted)',
+            }}
+          >
+            {s.label}
+          </button>
+        )
+      })}
     </div>
   )
 
-  const title = mode === 'e1rm' ? 'Estimated 1RM over time' : 'Max weight lifted'
-  const subtitle =
-    mode === 'e1rm'
+  // Two fixed rows, not one wrapping cluster. The scope selector is LAST on the top row
+  // and the row is right-aligned, so it stays pinned to the same corner whether or not the
+  // Goals switch is showing and whether or not the legend exists — the controls never
+  // shift under you when you change scope or metric mode.
+  //
+  // In the drill-down the goal line is always meaningful (the heaviest-set series is always
+  // plotted there), so the switch isn't gated on max-weight mode as it is in "all".
+  const controls = (
+    <div className="flex flex-col items-end gap-1.5">
+      <div className="flex items-center gap-1.5">
+        {(scope !== 'all' || mode === 'maxWeight') && goalSwitch}
+        {scopeSelector}
+      </div>
+      {scope === 'all' && legend}
+    </div>
+  )
+
+  const detailLift = scope !== 'all' ? LIFT_BY_KEY.get(scope)! : null
+  const title = detailLift
+    ? `${detailLift.label} detail`
+    : mode === 'e1rm'
+      ? 'Estimated 1RM over time'
+      : 'Max weight lifted'
+  const subtitle = detailLift
+    ? 'Est. 1RM vs. heaviest set (kg) — both on one axis'
+    : mode === 'e1rm'
       ? 'Epley formula · best working set per session'
       : 'Heaviest set each session, per lift — actual weight, not an estimate'
   const lineType = 'monotone'
 
+  if (detailLift) {
+    return (
+      <ChartCard title={title} subtitle={subtitle} right={controls}>
+        <LiftDetailView rows={rows} lift={detailLift.key} goal={showGoals ? goals[detailLift.key] : null} />
+      </ChartCard>
+    )
+  }
+
   return (
     <ChartCard title={title} subtitle={subtitle} right={controls}>
-      <div style={{ width: '100%', height: 340 }}>
+      <div style={{ width: '100%', height: 280 }}>
         <ResponsiveContainer>
           <LineChart data={shown} margin={{ top: 8, right: 56, bottom: 4, left: 4 }}>
             <CartesianGrid stroke="var(--gridline)" vertical={false} />

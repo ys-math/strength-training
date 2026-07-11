@@ -29,7 +29,7 @@ export default function StatCards({ rows, mode }: { rows: SetRow[]; mode: Metric
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
       {/* Hero: Big-4 combined total in the selected metric */}
       <div
-        className="col-span-2 flex flex-col rounded-2xl p-5 lg:col-span-1"
+        className="col-span-2 flex flex-col rounded-2xl p-3 lg:col-span-1"
         style={{
           background: 'var(--hero-gradient)',
           border: '1px solid var(--border)',
@@ -38,9 +38,9 @@ export default function StatCards({ rows, mode }: { rows: SetRow[]; mode: Metric
         <div className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
           {heroTitle}
         </div>
-        <div className="mt-1 text-3xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
+        <div className="mt-1 text-2xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
           {mode === 'e1rm' ? Math.round(big4.current) : fmtPlate(big4.current)}
-          <span className="ml-1 text-lg font-medium" style={{ color: 'var(--text-muted)' }}>
+          <span className="ml-1 text-base font-medium" style={{ color: 'var(--text-muted)' }}>
             kg
           </span>
         </div>
@@ -56,7 +56,7 @@ export default function StatCards({ rows, mode }: { rows: SetRow[]; mode: Metric
         return (
           <div
             key={lift.key}
-            className="flex flex-col rounded-2xl p-4"
+            className="flex flex-col rounded-2xl p-3"
             style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
           >
             <div className="flex items-center gap-2">
@@ -65,7 +65,7 @@ export default function StatCards({ rows, mode }: { rows: SetRow[]; mode: Metric
                 {lift.key}
               </span>
             </div>
-            <div className="mt-2 text-2xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
+            <div className="mt-1.5 text-xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
               {current > 0 ? (mode === 'e1rm' ? Math.round(current) : fmtPlate(current)) : '—'}
               <span className="ml-1 text-sm font-medium" style={{ color: 'var(--text-muted)' }}>
                 kg

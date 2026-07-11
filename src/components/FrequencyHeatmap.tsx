@@ -4,6 +4,7 @@ import {
   FOCUS_COLOR,
   FOCUS_META,
   dailyMetrics,
+  focusMix,
   frequencyStats,
   overallStats,
   quantileThresholds,
@@ -164,6 +165,7 @@ export default function FrequencyHeatmap({
   }, [rows])
 
   const freq = useMemo(() => frequencyStats(rows), [rows])
+  const mix = useMemo(() => focusMix(rows), [rows])
 
   const sessionsByDate = useMemo(() => {
     const map = new Map<string, SessionDetail>()
@@ -196,24 +198,79 @@ export default function FrequencyHeatmap({
       subtitle={`${stats.totalSessions} sessions · ${totalSets} working sets`}
       right={<HeatmapMetricToggle metric={metric} setMetric={setMetric} />}
     >
-      <div className="flex h-full flex-col justify-between">
+      <div className="flex h-full flex-col justify-between gap-3">
         <div className="grid grid-cols-3 gap-2">
           {chips.map((c) => (
-            <div key={c.label} className="rounded-lg px-2 py-1.5" style={{ border: '1px solid var(--border)' }}>
-              <div className="text-sm font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
+            <div
+              key={c.label}
+              className="flex flex-col justify-center rounded-lg px-3 py-4"
+              style={{ border: '1px solid var(--border)' }}
+            >
+              <div className="text-2xl font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
                 {c.value}
               </div>
-              <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                 {c.label}
               </div>
             </div>
           ))}
         </div>
 
+        {/* The distribution behind the Intensity mode, as a proportion — a row of three
+            counts tells you the numbers but not the *balance*, which is the thing you'd act
+            on ("I'm two-thirds heavy"). Same hues as the grid's intensity mode and the
+            Next-session focus banner (FOCUS_COLOR is the one map), and it names all three,
+            so in intensity mode it does the legend's job with counts attached — which is
+            why the legend below drops its swatches in that mode rather than repeating them. */}
+        {mix.total > 0 && (
+          <div className="rounded-lg px-3 py-4" style={{ border: '1px solid var(--border)' }}>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                Intensity mix
+              </span>
+              <span className="text-[10px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                {mix.total} training days
+              </span>
+            </div>
+            <div className="mt-3 flex h-3 overflow-hidden rounded-full" style={{ background: 'var(--seq-0)' }}>
+              {FOCUS_LEGEND.map(({ focus }) => {
+                const pct = (mix[focus] / mix.total) * 100
+                if (pct === 0) return null
+                return (
+                  <div key={focus} style={{ width: `${pct}%`, background: FOCUS_COLOR[focus] }} />
+                )
+              })}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+              {FOCUS_LEGEND.map(({ focus, label }) => (
+                <span key={focus} className="flex items-center gap-1.5 text-[10px]">
+                  <span
+                    className="h-[9px] w-[9px] shrink-0 rounded-sm"
+                    style={{ background: FOCUS_COLOR[focus], outline: '1px solid var(--border)' }}
+                  />
+                  <span style={{ color: 'var(--text-muted)' }}>{label}</span>
+                  <span className="tabular-nums font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    {mix[focus]}
+                  </span>
+                  <span className="tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                    ({Math.round((mix[focus] / mix.total) * 100)}%)
+                  </span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         {weeks.length > 0 && (
           <div className="overflow-x-auto py-1">
+            {/* inline-grid, not grid: a block grid fills the container and the leading
+                `auto` column (the weekday labels) absorbs all the slack, shoving the cells
+                to the right edge. Shrink-to-fit keeps the calendar left-aligned.
+                Cells stay a fixed 13px — a GitHub-style calendar, deliberately small. The
+                card's leftover height is filled by the stat chips and the intensity-mix bar
+                above, NOT by inflating the cells (that was tried and read as oversized). */}
             <div
-              className="grid gap-[3px]"
+              className="inline-grid gap-[3px]"
               style={{ gridTemplateColumns: `auto repeat(${weeks.length}, 13px)`, gridTemplateRows: `13px repeat(7, 13px)` }}
             >
               {monthLabels.map((label, ci) => (
@@ -260,20 +317,12 @@ export default function FrequencyHeatmap({
           </div>
         )}
 
-        {/* The legend's *shape* says which kind of scale is live: a captioned ramp for the
-            ordinal modes, named swatches for the categorical one — unlabeled hues would be
-            unreadable, since nothing about green says "moderate". */}
+        {/* Ordinal modes need a captioned ramp. The categorical mode doesn't need a legend
+            here at all any more: the Intensity-mix bar above already names all three hues
+            AND gives their counts, so repeating bare swatches would just say it twice. */}
         <div className="flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
           {metric === 'intensity' ? (
-            FOCUS_LEGEND.map(({ focus, label }) => (
-              <span key={focus} className="flex items-center gap-1">
-                <span
-                  className="h-[11px] w-[11px] rounded-sm"
-                  style={{ background: FOCUS_COLOR[focus], outline: '1px solid var(--border)' }}
-                />
-                {label}
-              </span>
-            ))
+            <span>Shade = the day’s intensity — see the mix above.</span>
           ) : (
             <>
               <span>Less</span>
