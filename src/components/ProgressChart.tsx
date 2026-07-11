@@ -12,16 +12,14 @@ import {
 } from 'recharts'
 import { LIFT_BY_KEY, LIFTS, type LiftKey } from '../lib/types'
 import {
-  e1rmSeries,
-  maxWeightSeries,
+  cumulativeSeries,
   recommendedGoals,
-  type MaxWeightPoint,
+  type BestToDatePoint,
   type Suggestion,
 } from '../lib/metrics'
 import { quarterCheckpoints } from '../lib/goals'
 import { fmtDate, fmtLongDate, fmtPlate } from '../lib/format'
 import type { SetRow } from '../lib/types'
-import type { MetricMode } from '../lib/mode'
 import ChartCard from './ChartCard'
 import LiftDetailView from './LiftDetail'
 
@@ -32,20 +30,18 @@ const tipClass = 'rounded-lg px-3 py-2 text-xs shadow-lg'
 const tipStyle = { background: 'var(--page)', border: '1px solid var(--border)', color: 'var(--text-primary)' }
 
 // One tooltip for the whole chart. On the synthetic projected column it lists each
-// lift's suggested next-session target; on a real session it shows that session's
-// per-lift value (with reps · sets in max-weight mode). Projection series (dataKeys
-// ending "__p") never surface as their own rows.
+// lift's suggested next-session target; on a real date it shows each lift's standing
+// record and when it was set (the line is best-to-date, so a point often restates a
+// record from an earlier session). Projection series (dataKeys ending "__p") never
+// surface as their own rows.
 function ProgressTooltip({
   active,
   payload,
   label,
-  mode,
   suggestions,
-}: TooltipProps<number, string> & { mode: MetricMode; suggestions: Record<LiftKey, Suggestion> }) {
+}: TooltipProps<number, string> & { suggestions: Record<LiftKey, Suggestion> }) {
   if (!active || !payload || payload.length === 0) return null
   const row = payload[0].payload as Record<string, unknown>
-
-  const metricNote = mode === 'e1rm' ? 'est. 1RM' : 'heaviest set'
 
   if (row.__projection === true) {
     const items = LIFTS.filter((l) => row[`${l.key}__p`] != null && suggestions[l.key].prev != null)
@@ -53,7 +49,7 @@ function ProgressTooltip({
     return (
       <div className={tipClass} style={tipStyle}>
         <div className="mb-1 font-medium" style={{ color: 'var(--text-secondary)' }}>
-          Next session · projected {metricNote}
+          Next session · projected heaviest set
         </div>
         {items.map((l) => {
           const s = suggestions[l.key]
@@ -62,17 +58,8 @@ function ProgressTooltip({
               <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: l.color }} />
               <span style={{ color: 'var(--text-muted)' }}>{l.label}</span>
               <span className="ml-auto tabular-nums font-medium">
-                {mode === 'e1rm' ? (
-                  <>
-                    est. 1RM {s.projectedE1rm} kg
-                    <span style={{ color: 'var(--text-muted)' }}> · {s.load}×{s.reps}</span>
-                  </>
-                ) : (
-                  <>
-                    {s.load} kg × {s.reps}
-                    <span style={{ color: 'var(--text-muted)' }}> · {s.sets} {s.sets === 1 ? 'set' : 'sets'}</span>
-                  </>
-                )}
+                {s.load} kg × {s.reps}
+                <span style={{ color: 'var(--text-muted)' }}> · {s.sets} {s.sets === 1 ? 'set' : 'sets'}</span>
               </span>
             </div>
           )
@@ -89,25 +76,19 @@ function ProgressTooltip({
   return (
     <div className={tipClass} style={tipStyle}>
       <div className="mb-1 font-medium" style={{ color: 'var(--text-secondary)' }}>
-        {fmtLongDate(String(label))} <span style={{ color: 'var(--text-muted)' }}>· {metricNote}</span>
+        {fmtLongDate(String(label))} <span style={{ color: 'var(--text-muted)' }}>· best to date</span>
       </div>
       {items.map((p) => {
         const key = p.dataKey as LiftKey
-        const d = mode === 'maxWeight' ? (p.payload as MaxWeightPoint).detail?.[key] : undefined
+        const d = (p.payload as BestToDatePoint).detail?.[key]
         return (
           <div key={key} className="flex items-center gap-2 py-0.5">
             <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: p.color }} />
             <span style={{ color: 'var(--text-muted)' }}>{LIFT_BY_KEY.get(key)?.label ?? p.name}</span>
             <span className="ml-auto tabular-nums font-medium">
-              {mode === 'maxWeight' ? (
-                <>
-                  {p.value} kg{d ? ` × ${d.reps}` : ''}
-                  {d && d.sets > 0 && (
-                    <span style={{ color: 'var(--text-muted)' }}> · {d.sets} {d.sets === 1 ? 'set' : 'sets'}</span>
-                  )}
-                </>
-              ) : (
-                `${Math.round(Number(p.value) * 10) / 10} kg`
+              {p.value} kg{d ? ` × ${d.reps}` : ''}
+              {d && d.setOn !== row.dateKey && (
+                <span style={{ color: 'var(--text-muted)' }}> · set {fmtDate(d.setOn)}</span>
               )}
             </span>
           </div>
@@ -159,6 +140,26 @@ function makeGoalLabel(color: string, text: string, dy: number) {
   }
 }
 
+// A dot only where the record actually *advanced*. The line is best-to-date, so most
+// points merely restate the standing record; dotting all of them would imply a PR every
+// session. A long flat stretch with no dots is then legible as "nothing new here" —
+// which is what this chart says instead of falling during a deload or a layoff.
+// `all` is the FULL history and `start` the slice offset, so a point's predecessor is
+// looked up in real history — not in the visible window, which would make the leftmost
+// bar of any zoomed span falsely read as a PR.
+function makePrDot(key: LiftKey, all: readonly unknown[], start: number, color: string) {
+  return function PrDot(props: { cx?: number; cy?: number; index?: number }) {
+    if (props.index == null || props.cx == null || props.cy == null) return null
+    const i = props.index + start
+    const at = (n: number) => (all[n] as Record<string, number | undefined> | undefined)?.[key]
+    const v = at(i)
+    if (v == null) return null
+    const prev = i > 0 ? at(i - 1) : undefined
+    if (prev != null && v <= prev) return null // no advance — not a PR
+    return <circle cx={props.cx} cy={props.cy} r={2.5} fill={color} />
+  }
+}
+
 // Hollow "target" ring drawn only at the projected point (the dashed line's tip),
 // so it reads as a goal rather than a logged set.
 function makeProjDot(projIndex: number, color: string) {
@@ -193,17 +194,17 @@ function declutterByValue(points: Partial<Record<LiftKey, number>>, minGap: numb
 
 export default function ProgressChart({
   rows,
-  mode,
   suggestions,
 }: {
   rows: SetRow[]
-  mode: MetricMode
   suggestions: Record<LiftKey, Suggestion>
 }) {
-  const data = useMemo(
-    () => (mode === 'e1rm' ? e1rmSeries(rows) : maxWeightSeries(rows)),
-    [rows, mode],
-  )
+  // Best-to-date, so the four-lift overview is monotone. The per-session heaviest set
+  // zigzags by design under DUP (a light day is a cliff, not a regression), which made
+  // the cross-lift comparison unreadable; the drill-down splits by rep range instead.
+  // The cost, accepted: a deload or layoff reads as *flat* here, never as a fall — which
+  // is why dots mark only the sessions where the record actually advanced.
+  const data = useMemo(() => cumulativeSeries(rows), [rows])
   const [hidden, setHidden] = useState<Set<LiftKey>>(new Set())
   const [showGoals, setShowGoals] = useState(true)
   const [startIdx, setStartIdx] = useState(0)
@@ -216,7 +217,7 @@ export default function ProgressChart({
     [rows],
   )
   const goalDate = useMemo(() => quarterCheckpoints().horizonDate.short, [])
-  const goalsOn = mode === 'maxWeight' && showGoals
+  const goalsOn = showGoals
 
   const lastIndex = useMemo(() => {
     const map: Record<string, number> = {}
@@ -231,11 +232,15 @@ export default function ProgressChart({
     return map
   }, [data])
 
-  // The per-lift projection value in the current metric (null when the goal doesn't
-  // advance the trend — deload / hold / no history).
+  // The per-lift projected heaviest set — but only when it would *advance* the standing
+  // record. The line is best-to-date and therefore never descends; a projection below the
+  // current best (a deload, a light day, a hold) would draw a dip this chart can't mean.
   const projValue = (key: LiftKey): number | null => {
-    const s = suggestions[key]
-    return mode === 'e1rm' ? s.projectedE1rm : s.projectedWeight
+    const v = suggestions[key].projectedWeight
+    if (v == null) return null
+    const li = lastIndex[key]
+    const best = li != null ? (data[li] as unknown as Record<string, number | undefined>)[key] : undefined
+    return best != null && v <= best ? null : v
   }
 
   // Chart data with a synthetic future column: each lift's dashed `${key}__p` series
@@ -271,7 +276,7 @@ export default function ProgressChart({
     if (!any) return { chartData: aug, projected: false }
     aug.push(projRow)
     return { chartData: aug, projected: true }
-  }, [data, lastIndex, suggestions, mode])
+  }, [data, lastIndex, suggestions])
 
   // Index of the appended projected row within chartData (a projected lift's dashed
   // series and its end-label live at this index).
@@ -291,7 +296,7 @@ export default function ProgressChart({
       }
     }
     return m
-  }, [data, lastIndex, projected, suggestions, mode])
+  }, [data, lastIndex, projected, suggestions])
 
   // Rough value scale of the chart (end points + visible goals) used only to size the
   // "close enough to collide" threshold below — doesn't need to match the axis exactly.
@@ -416,38 +421,31 @@ export default function ProgressChart({
 
   // Two fixed rows, not one wrapping cluster. The scope selector is LAST on the top row
   // and the row is right-aligned, so it stays pinned to the same corner whether or not the
-  // Goals switch is showing and whether or not the legend exists — the controls never
-  // shift under you when you change scope or metric mode.
-  //
-  // In the drill-down the goal line is always meaningful (the heaviest-set series is always
-  // plotted there), so the switch isn't gated on max-weight mode as it is in "all".
+  // legend exists — the controls never shift under you when you change scope.
+  const detailLift = scope !== 'all' ? LIFT_BY_KEY.get(scope)! : null
+
+  // The Goals switch is hidden in a lift scope, not merely inert: a goal is a
+  // *max-weight* kg number (65 kg), and the drill-down's axis is kg of *volume*
+  // (0–~2000). The target has no coordinate there, so the control has nothing to toggle.
   const controls = (
     <div className="flex flex-col items-end gap-1.5">
       <div className="flex items-center gap-1.5">
-        {(scope !== 'all' || mode === 'maxWeight') && goalSwitch}
+        {!detailLift && goalSwitch}
         {scopeSelector}
       </div>
-      {scope === 'all' && legend}
+      {!detailLift && legend}
     </div>
   )
 
-  const detailLift = scope !== 'all' ? LIFT_BY_KEY.get(scope)! : null
-  const title = detailLift
-    ? `${detailLift.label} detail`
-    : mode === 'e1rm'
-      ? 'Estimated 1RM over time'
-      : 'Max weight lifted'
+  const title = detailLift ? `${detailLift.label} detail` : 'Max weight lifted'
   const subtitle = detailLift
-    ? 'Est. 1RM vs. heaviest set (kg) — both on one axis'
-    : mode === 'e1rm'
-      ? 'Epley formula · best working set per session'
-      : 'Heaviest set each session, per lift — actual weight, not an estimate'
-  const lineType = 'monotone'
+    ? 'Every set performed — block height is the weight, so a column is the session’s volume'
+    : 'Best set to date, per lift — actual weight, never an estimate'
 
   if (detailLift) {
     return (
       <ChartCard title={title} subtitle={subtitle} right={controls}>
-        <LiftDetailView rows={rows} lift={detailLift.key} goal={showGoals ? goals[detailLift.key] : null} />
+        <LiftDetailView rows={rows} lift={detailLift.key} />
       </ChartCard>
     )
   }
@@ -471,7 +469,7 @@ export default function ProgressChart({
               stroke="var(--baseline)"
               tickFormatter={(v: number) => `${v}`}
             />
-            <Tooltip content={<ProgressTooltip mode={mode} suggestions={suggestions} />} />
+            <Tooltip content={<ProgressTooltip suggestions={suggestions} />} />
             {goalsOn &&
               LIFTS.map((lift) =>
                 hidden.has(lift.key) || !(goals[lift.key] > 0) ? null : (
@@ -498,12 +496,12 @@ export default function ProgressChart({
               hidden.has(lift.key) ? null : (
                 <Line
                   key={lift.key}
-                  type={lineType}
+                  type="monotone"
                   dataKey={lift.key}
                   name={lift.label}
                   stroke={lift.color}
                   strokeWidth={2}
-                  dot={mode === 'e1rm' ? false : { r: 2.5, strokeWidth: 0, fill: lift.color }}
+                  dot={makePrDot(lift.key, chartData, start, lift.color) as never}
                   activeDot={{ r: 4, strokeWidth: 0 }}
                   connectNulls
                   isAnimationActive={false}

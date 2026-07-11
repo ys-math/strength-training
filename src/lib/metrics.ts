@@ -1,13 +1,9 @@
 import { LIFTS, LIFT_BY_KEY, type LiftKey, type LiftPR, type LiftSession, type SetRow } from './types'
-import type { MetricMode } from './mode'
 import type { GoalHorizon } from './goals'
 import { epley } from './parse'
 
 export const round1 = (n: number) => Math.round(n * 10) / 10
 export const round0 = (n: number) => Math.round(n)
-
-// The per-session value a given metric mode reads off a LiftSession.
-const sessionMetric = (s: LiftSession, mode: MetricMode) => (mode === 'e1rm' ? s.bestE1rm : s.maxWeight)
 
 // From a series of "best-to-date" values (non-decreasing), the current value and
 // the previous record just before the most recent increase — for a progress delta.
@@ -82,48 +78,21 @@ export function liftPR(sessions: LiftSession[]): LiftPR | null {
   }
 }
 
-export interface E1rmPoint {
-  dateKey: string
-  ts: number
-  BP?: number
-  SQ?: number
-  DL?: number
-  OHP?: number
-}
-
-// A row per workout date, carrying whichever lifts were trained that day.
-// Used directly by the multi-line e1RM chart.
-export function e1rmSeries(rows: SetRow[]): E1rmPoint[] {
-  const byDate = new Map<string, E1rmPoint>()
-  for (const lift of LIFTS) {
-    for (const s of liftSessions(rows, lift.key)) {
-      let point = byDate.get(s.dateKey)
-      if (!point) {
-        point = { dateKey: s.dateKey, ts: s.date.getTime() }
-        byDate.set(s.dateKey, point)
-      }
-      point[lift.key] = round1(s.bestE1rm)
-    }
-  }
-  return [...byDate.values()].sort((a, b) => a.ts - b.ts)
-}
-
-// Sum of each lift's *best-to-date* value (in the chosen metric), tracked over
-// time so it only climbs.
+// Sum of each lift's best-to-date heaviest set, tracked over time so it only climbs.
 export interface Big4Point {
   dateKey: string
   ts: number
   total: number
 }
 
-export function big4Series(rows: SetRow[], mode: MetricMode): { series: Big4Point[]; current: number; prev: number } {
+export function big4Series(rows: SetRow[]): { series: Big4Point[]; current: number; prev: number } {
   const dates = [...new Set(rows.filter((r) => r.lift).map((r) => r.dateKey))].sort()
   const bestToDate: Record<LiftKey, number> = { BP: 0, SQ: 0, DL: 0, OHP: 0 }
 
   const byLiftDate = new Map<string, number>()
   for (const lift of LIFTS) {
     for (const s of liftSessions(rows, lift.key)) {
-      byLiftDate.set(`${lift.key}|${s.dateKey}`, sessionMetric(s, mode))
+      byLiftDate.set(`${lift.key}|${s.dateKey}`, s.maxWeight)
     }
   }
 
@@ -141,61 +110,49 @@ export function big4Series(rows: SetRow[], mode: MetricMode): { series: Big4Poin
   return { series, current, prev }
 }
 
-// Each lift's *best-to-date* value in the chosen metric, per workout date, so
-// each series only climbs. Backs the per-lift "current PR" figure in StatCards.
-export function cumulativeSeries(rows: SetRow[], mode: MetricMode): E1rmPoint[] {
-  const dates = [...new Set(rows.filter((r) => r.lift).map((r) => r.dateKey))].sort()
-  const bestToDate: Record<LiftKey, number> = { BP: 0, SQ: 0, DL: 0, OHP: 0 }
-
-  const byLiftDate = new Map<string, number>()
-  for (const lift of LIFTS) {
-    for (const s of liftSessions(rows, lift.key)) {
-      byLiftDate.set(`${lift.key}|${s.dateKey}`, sessionMetric(s, mode))
-    }
-  }
-
-  const series: E1rmPoint[] = []
-  for (const dateKey of dates) {
-    for (const lift of LIFTS) {
-      const v = byLiftDate.get(`${lift.key}|${dateKey}`)
-      if (v && v > bestToDate[lift.key]) bestToDate[lift.key] = v
-    }
-    const point: E1rmPoint = { dateKey, ts: new Date(dateKey).getTime() }
-    for (const lift of LIFTS) {
-      if (bestToDate[lift.key] > 0) point[lift.key] = round1(bestToDate[lift.key])
-    }
-    series.push(point)
-  }
-  return series
-}
-
-// Per-session heaviest set for each lift (raw kg, not cumulative — it can rise or
-// fall session to session). Carries the reps of that heaviest set and the lift's
-// working-set count that day so the chart tooltip can show both.
-export interface MaxWeightPoint {
+// Each lift's *best-to-date* heaviest set, per workout date, so each series only
+// climbs. `detail` carries the reps of the set that established the standing
+// record and the date it was set, so a point can be read without a second lookup.
+// Backs the main ProgressChart and the per-lift "current PR" figure in StatCards.
+export interface BestToDatePoint {
   dateKey: string
   ts: number
   BP?: number
   SQ?: number
   DL?: number
   OHP?: number
-  detail: Partial<Record<LiftKey, { reps: number; sets: number }>>
+  detail: Partial<Record<LiftKey, { reps: number; setOn: string }>>
 }
 
-export function maxWeightSeries(rows: SetRow[]): MaxWeightPoint[] {
-  const byDate = new Map<string, MaxWeightPoint>()
+export function cumulativeSeries(rows: SetRow[]): BestToDatePoint[] {
+  const dates = [...new Set(rows.filter((r) => r.lift).map((r) => r.dateKey))].sort()
+  const best: Partial<Record<LiftKey, { weight: number; reps: number; setOn: string }>> = {}
+
+  const byLiftDate = new Map<string, LiftSession>()
   for (const lift of LIFTS) {
-    for (const s of liftSessions(rows, lift.key)) {
-      let point = byDate.get(s.dateKey)
-      if (!point) {
-        point = { dateKey: s.dateKey, ts: s.date.getTime(), detail: {} }
-        byDate.set(s.dateKey, point)
-      }
-      point[lift.key] = round1(s.maxWeight)
-      point.detail[lift.key] = { reps: s.maxWeightReps, sets: s.workingSets }
-    }
+    for (const s of liftSessions(rows, lift.key)) byLiftDate.set(`${lift.key}|${s.dateKey}`, s)
   }
-  return [...byDate.values()].sort((a, b) => a.ts - b.ts)
+
+  const series: BestToDatePoint[] = []
+  for (const dateKey of dates) {
+    for (const lift of LIFTS) {
+      const s = byLiftDate.get(`${lift.key}|${dateKey}`)
+      if (!s || s.maxWeight <= 0) continue
+      const standing = best[lift.key]
+      if (!standing || s.maxWeight > standing.weight) {
+        best[lift.key] = { weight: s.maxWeight, reps: s.maxWeightReps, setOn: s.dateKey }
+      }
+    }
+    const point: BestToDatePoint = { dateKey, ts: new Date(dateKey).getTime(), detail: {} }
+    for (const lift of LIFTS) {
+      const standing = best[lift.key]
+      if (!standing) continue
+      point[lift.key] = round1(standing.weight)
+      point.detail[lift.key] = { reps: standing.reps, setOn: standing.setOn }
+    }
+    series.push(point)
+  }
+  return series
 }
 
 // ---- Weekly volume (ISO week) -------------------------------------------------
@@ -547,8 +504,8 @@ export function frequencyStats(rows: SetRow[]): FrequencyStats {
 // ---- Next-session suggestion --------------------------------------------------
 //
 // A per-lift "what to do next" heuristic computed purely from set history. The
-// rules and the theory behind each are documented in README.md ("How suggestions
-// work"). All tunable thresholds live in DEFAULT_SUGGESTION_CONFIG — no magic
+// rules and the theory behind each are documented in docs/METHOD.md ("How
+// suggestions work"). All tunable thresholds live in DEFAULT_SUGGESTION_CONFIG — no magic
 // numbers scattered through the branching.
 
 // Daily undulating periodization (DUP): each session carries one of three
@@ -578,7 +535,7 @@ export interface SuggestionConfig {
 
 // Baseline routine shape: 2–3 warmup sets (see warmupRamp), 3 main working
 // sets, 1 heavy top set — trimmed on a deload or omitted where noted (see
-// README "How suggestions work").
+// docs/METHOD.md "How suggestions work").
 export const DEFAULT_SUGGESTION_CONFIG: SuggestionConfig = {
   loadIncrement: 2.5,
   stagnationWindow: 3,
@@ -589,7 +546,7 @@ export const DEFAULT_SUGGESTION_CONFIG: SuggestionConfig = {
   detraining: { graceWeeks: 2, tauWeeks: 10, minRetention: 0.7 },
   dup: {
     // Windows fit to real logged training; cycle undulates for max session-to-session
-    // contrast (never heavy → heavy). See README "How suggestions work".
+    // contrast (never heavy → heavy). See docs/METHOD.md "How suggestions work".
     windows: { heavy: [3, 5], moderate: [6, 8], light: [9, 12] },
     cycle: ['heavy', 'light', 'moderate'],
   },
@@ -752,7 +709,7 @@ function buildSuggestion(
   }
 }
 
-// ---- Theory-grounded helpers (see README "How suggestions work") -------------
+// ---- Theory-grounded helpers (see docs/METHOD.md "How suggestions work") -----
 
 // Reversibility / detraining: strength is retained for a short grace period, then
 // decays roughly exponentially with time off. Retention R(g) ∈ [minRetention, 1].
@@ -828,11 +785,14 @@ export const FOCUS_COLOR: Record<DayFocus, string> = {
   light: 'var(--focus-light)',
 }
 
+// Heaviest → lightest. The order every focus-keyed list is rendered in.
+export const FOCUSES: DayFocus[] = ['heavy', 'moderate', 'light']
+
 // Classify a rep count into its focus by the configured window ceilings: at/below
 // the heavy window's top is heavy, at/below the moderate window's top is moderate,
 // otherwise light. Uses ceilings (not full ranges) so reps that fall between two
 // windows still classify into the lower one.
-function classifyFocus(reps: number, config: SuggestionConfig): DayFocus {
+export function classifyFocus(reps: number, config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG): DayFocus {
   if (reps <= config.dup.windows.heavy[1]) return 'heavy'
   if (reps <= config.dup.windows.moderate[1]) return 'moderate'
   return 'light'
@@ -873,6 +833,117 @@ export function dayFocusMap(rows: SetRow[], config: SuggestionConfig = DEFAULT_S
   const out = new Map<string, DayFocus>()
   for (const [dateKey, reps] of repsByDay) out.set(dateKey, classifyFocus(median(reps), config))
   return out
+}
+
+// ---- Per-set series (the per-lift drill-down) ---------------------------------
+
+export interface LiftSetSession {
+  dateKey: string
+  ts: number
+  /** Working sets in performed order — one rendered tray each. */
+  sets: { weight: number; reps: number; volume: number }[]
+  volume: number // Σ weight × reps, warmups excluded
+  workingSets: number
+}
+
+// A lift's history as the sets actually performed, session by session — the shape the
+// drill-down draws: a column per session, a tray per set, a block per rep at the set's
+// weight, so the column's height *is* `volume`.
+//
+// The guard is the same one `sessionVolume` and `dailyMetrics` use, and `volume` is
+// rounded the same way (round0, per lift). That is load-bearing, not incidental: it
+// makes a column's kg equal that lift's segment of the Session-volume card's bar for
+// the same date, exactly — the dashboard agrees on one number for a day. Warmups are
+// excluded for the same reason; counting them would inflate a Bench day by ~29 % and
+// put this card at odds with the volume card and the heatmap.
+export function liftSetSeries(rows: SetRow[], lift: LiftKey): LiftSetSession[] {
+  const byDate = new Map<string, LiftSetSession>()
+  for (const r of rows) {
+    if (r.lift !== lift || r.isWarmup || r.weight <= 0) continue
+    let s = byDate.get(r.dateKey)
+    if (!s) {
+      s = { dateKey: r.dateKey, ts: r.date.getTime(), sets: [], volume: 0, workingSets: 0 }
+      byDate.set(r.dateKey, s)
+    }
+    const volume = r.weight * r.reps
+    s.sets.push({ weight: r.weight, reps: r.reps, volume })
+    s.volume += volume
+    s.workingSets += 1
+  }
+
+  const sessions = [...byDate.values()].sort((a, b) => a.ts - b.ts)
+  for (const s of sessions) s.volume = round0(s.volume)
+  return sessions
+}
+
+export interface LiftGrowth {
+  /** Heaviest working set in the window. */
+  maxWeight: number
+  /** kg/week the *record* advanced across the window. Null until the window spans a week. */
+  maxWeightPerWeek: number | null
+  /** Mean working tonnage per ISO week in the window (rest weeks count as 0). */
+  weeklyVolume: number
+  /** Trend of that weekly tonnage, as % of its own mean per week. Null under 2 weeks. */
+  weeklyVolumePctPerWeek: number | null
+}
+
+// The two rates the drill-down prints above the blocks — one for each thing the chart
+// can't say on its own. The blocks show volume; the axis can't show weight (a block is
+// ~2 px per 10 kg). So: how fast is the *record* climbing, and how fast is the *workload*.
+//
+// `from` scopes both to the span slider's window, so every number on the card describes
+// the sessions actually on screen.
+//
+// Max weight uses the window's RUNNING MAX, not a fit through the per-session tops. The
+// engine runs DUP, so per-session top weight alternates heavy/light by design; a fit
+// through it measures where the window happened to start and end in the cycle, not
+// progress. A running max only climbs, so its slope is "how fast did the record advance".
+//
+// Weekly volume is the opposite case — it's a *level*, not a record — so it takes a
+// least-squares slope, expressed as a % of its own mean so it's readable next to a kg/wk.
+// Rest weeks inside the window are filled in as 0: a week you didn't train really was a
+// zero-volume week, and dropping it would flatter the trend.
+export function liftGrowth(rows: SetRow[], lift: LiftKey, from?: string): LiftGrowth {
+  const sessions = liftSetSeries(rows, lift).filter((s) => !from || s.dateKey >= from)
+  const empty: LiftGrowth = { maxWeight: 0, maxWeightPerWeek: null, weeklyVolume: 0, weeklyVolumePctPerWeek: null }
+  if (sessions.length === 0) return empty
+
+  // --- record advance (kg/wk) ---
+  let running = 0
+  const runningMax = sessions.map((s) => (running = Math.max(running, ...s.sets.map((x) => x.weight))))
+  const first = runningMax[0]
+  const last = runningMax[runningMax.length - 1]
+  const spanWeeks = (sessions[sessions.length - 1].ts - sessions[0].ts) / (7 * 86400000)
+  const maxWeightPerWeek = spanWeeks >= 1 ? round1((last - first) / spanWeeks) : null
+
+  // --- weekly workload level and its trend (%/wk) ---
+  const WEEK = 7 * 86400000
+  const inWindow = weeklyVolume(rows).filter((w) => w.ts >= sessions[0].ts - WEEK && w.ts <= sessions[sessions.length - 1].ts)
+  let weeklyVolumeMean = 0
+  let weeklyVolumePctPerWeek: number | null = null
+  if (inWindow.length > 0) {
+    // Fill rest weeks with 0 so a skipped week counts against the trend, as it should.
+    const start = inWindow[0].ts
+    const nWeeks = Math.round((inWindow[inWindow.length - 1].ts - start) / WEEK) + 1
+    const series = Array.from({ length: nWeeks }, (_, i) => {
+      const w = inWindow.find((x) => Math.round((x.ts - start) / WEEK) === i)
+      return w ? w[lift] : 0
+    })
+    const mean = series.reduce((a, b) => a + b, 0) / series.length
+    weeklyVolumeMean = round0(mean)
+    if (series.length >= 2 && mean > 0) {
+      const xBar = (series.length - 1) / 2
+      let num = 0
+      let den = 0
+      series.forEach((y, x) => {
+        num += (x - xBar) * (y - mean)
+        den += (x - xBar) ** 2
+      })
+      if (den > 0) weeklyVolumePctPerWeek = round1((num / den / mean) * 100)
+    }
+  }
+
+  return { maxWeight: last, maxWeightPerWeek, weeklyVolume: weeklyVolumeMean, weeklyVolumePctPerWeek }
 }
 
 // Infer the next session's DUP focus: classify your most recent training day and
@@ -1180,7 +1251,7 @@ export interface GoalConfig {
 // cumulative gain between a small %-of-current floor (so a plateaued lift still gets a
 // target) and a %-of-current ceiling that itself decelerates per quarter (8 % in one
 // quarter, 15 % over two, 25 % over four — a hot streak can't project to absurd numbers).
-// Rough guide only — see README "How goals work".
+// Rough guide only — see docs/METHOD.md "How goals work".
 export const DEFAULT_GOAL_CONFIG: GoalConfig = {
   quarterWeeks: 13,
   decay: { mid: 0.7, long: 0.5 },

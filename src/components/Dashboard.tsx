@@ -3,7 +3,6 @@ import { LIFTS, type LiftKey, type SetRow } from '../lib/types'
 import { nextSessionSuggestion, overallStats, recommendedGoals, type GoalContext } from '../lib/metrics'
 import { fmtLongDate } from '../lib/format'
 import { quarterCheckpoints, weeksUntil } from '../lib/goals'
-import { useMetricMode } from '../hooks/useMetricMode'
 import { useHeatmapMetric } from '../hooks/useHeatmapMetric'
 import { useVolumeGrain } from '../hooks/useVolumeGrain'
 import StatCards from './StatCards'
@@ -12,12 +11,10 @@ import SessionLog from './SessionLog'
 import ProgressChart from './ProgressChart'
 import VolumeCard from './VolumeCard'
 import FrequencyHeatmap from './FrequencyHeatmap'
-import ModeToggle from './ModeToggle'
 import ThemeSwitcher from './ThemeSwitcher'
 
 export default function Dashboard({ rows }: { rows: SetRow[] }) {
   const stats = useMemo(() => overallStats(rows), [rows])
-  const { mode, setMode } = useMetricMode()
   const { metric: heatmapMetric, setMetric: setHeatmapMetric } = useHeatmapMetric()
   const { grain: volumeGrain, setGrain: setVolumeGrain } = useVolumeGrain()
 
@@ -44,17 +41,14 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-      <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
-            Strength Training Progress
-          </h1>
-          <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
-            Bench · Squat · Deadlift · Overhead Press &nbsp;·&nbsp; {fmtLongDate(stats.firstDate)} –{' '}
-            {fmtLongDate(stats.lastDate)}
-          </p>
-        </div>
-        <ModeToggle mode={mode} setMode={setMode} />
+      <header className="mb-6">
+        <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+          Strength Training Progress
+        </h1>
+        <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
+          Bench · Squat · Deadlift · Overhead Press &nbsp;·&nbsp; {fmtLongDate(stats.firstDate)} –{' '}
+          {fmtLongDate(stats.lastDate)}
+        </p>
       </header>
 
       {/* Two zones, in reading order. The glance strip answers "am I progressing" in a
@@ -62,7 +56,7 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
           Session log sits beside Next session — it opens on the latest session, so the
           pair reads "here's what I did / here's what to do" without a duplicate card. */}
       <div className="space-y-4">
-        <StatCards rows={rows} mode={mode} />
+        <StatCards rows={rows} />
 
         {/* TODAY */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -71,7 +65,7 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
         </div>
 
         {/* TREND */}
-        <ProgressChart rows={rows} mode={mode} suggestions={suggestions} />
+        <ProgressChart rows={rows} suggestions={suggestions} />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <VolumeCard rows={rows} grain={volumeGrain} setGrain={setVolumeGrain} />
           <FrequencyHeatmap rows={rows} metric={heatmapMetric} setMetric={setHeatmapMetric} />
@@ -82,9 +76,7 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
         <div className="mb-3 flex justify-center">
           <ThemeSwitcher />
         </div>
-        <p style={{ color: 'var(--text-muted)' }}>
-          Estimated 1RM uses the Epley formula (weight × (1 + reps/30)). Data exported from the Strong app.
-        </p>
+        <p style={{ color: 'var(--text-muted)' }}>Data exported from the Strong app.</p>
       </footer>
     </div>
   )

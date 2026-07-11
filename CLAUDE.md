@@ -1,6 +1,7 @@
 # CLAUDE.md
 
-Guidance for working in this repo. Read alongside `README.md` (user-facing docs).
+Guidance for working in this repo. Read alongside `README.md` (user-facing docs) and
+`docs/METHOD.md` (the suggestion/goal rules, their formulas, and the evidence behind each).
 
 ## What this is
 
@@ -19,10 +20,11 @@ npm run preview  # serve the production build at :4173
 npm run test     # vitest run — unit tests for the suggestion logic
 ```
 
-`npm run build` is the type-check gate. There is no lint script. The only unit tests are
-Vitest coverage of `nextSessionSuggestion` (`src/lib/metrics.suggestion.test.ts`); the rest
-of the pipeline is verified by build + manual/headless checks. Test files live under `src`,
-so `tsc -b` type-checks them too, but they're never bundled (nothing imports them).
+`npm run build` is the type-check gate. There is no lint script. Vitest covers the pure metrics —
+`nextSessionSuggestion` (`metrics.suggestion.test.ts`), the drill-down's per-set series
+(`metrics.blocks.test.ts`), the heatmap (`metrics.heatmap.test.ts`), session volume, and goals; the
+components are verified by build + manual checks. Test files live under `src`, so `tsc -b`
+type-checks them too, but they're never bundled (nothing imports them).
 
 ## Architecture & data flow
 
@@ -44,14 +46,17 @@ strong_workouts.csv ?raw
   `parseWorkouts`. Dates arrive as `"YYYY-MM-DD HH:MM:SS"` (local). Sets are keyed by
   `dateKey` (YYYY-MM-DD).
 - **`src/lib/metrics.ts`** — all aggregation, pure and unit-testable: `liftSessions`,
-  `liftPR`, `e1rmSeries` (per-session best e1RM), `maxWeightSeries` (per-session heaviest
-  set + its reps/set-count, for the max-weight chart), `cumulativeSeries(rows, mode)` and
-  `big4Series(rows, mode)` (each lift's / the summed best-to-date value, only climbs),
+  `liftPR`, `cumulativeSeries(rows)` and `big4Series(rows)` (each lift's / the summed
+  best-to-date heaviest set, only climbs — `cumulativeSeries` points also carry the reps and
+  date of the standing record), `liftSetSeries(rows, lift)` (a lift's history as the sets actually
+  performed, session by session — the shape the drill-down's set-block chart draws) and
+  `liftGrowth(rows, lift, from?)` (that card's two rates: the record's kg/wk and weekly tonnage's %/wk,
+  scoped to the visible span),
   `currentPrev`, `weeklyVolume` (ISO week), `sessionVolume` (per training day), `dailyMetrics`,
   `focusMix` (training days per intensity band, for the heatmap's mix bar), `sessionDetails`,
   `overallStats`,
   and `nextSessionSuggestion(rows, goalCtx?, config?, now?, focus?)` (per-lift load × reps heuristic — config
-  in `DEFAULT_SUGGESTION_CONFIG`, theory in README's "How suggestions work" / "theory → formula map").
+  in `DEFAULT_SUGGESTION_CONFIG`, theory in `docs/METHOD.md`'s "How suggestions work" / "theory → formula map").
   It also emits a heavy **`topSet`** (SAID/Size Principle, `heavyTopSet` at ~90% e1RM) and a
   **`'return'`** action that backs the load off after a layoff (reversibility, `retentionFactor`);
   `now` (default `latestTs(rows)`, `Date.now()` from `Dashboard`) is the detraining reference.
@@ -194,42 +199,121 @@ the frequency chips, and the mix bar are true in every mode. The tooltip **alway
 metrics** regardless of mode — color is for scanning, so reading a single day should never require a
 toggle.
 
-### Metric mode (est. 1RM vs. actual max weight)
+### Nothing estimated is ever plotted — and why that forces the rest of the design
 
-A global toggle switches the primary metric shown by `StatCards` (hero + per-lift cards)
-and the main `ProgressChart`. Defined in `src/lib/mode.ts`
-(`MetricMode = 'e1rm' | 'maxWeight'`, `MODES`, `DEFAULT_MODE`, `MODE_STORAGE_KEY`);
-`src/hooks/useMetricMode.ts` reads/writes `localStorage`; `ModeToggle.tsx` is the header
-control. Mode-aware metrics take `mode` and read the right per-session value via an internal
-`sessionMetric` (`bestE1rm` or `maxWeight`). Both modes of `ProgressChart` plot the best set
-*per session* (monotone lines): `e1rm` via `e1rmSeries`, `maxWeight` via `maxWeightSeries`
-(whose points also carry each set's reps and working-set count, shown in a custom tooltip).
-The `StatCards` per-lift "current PR" figure still comes from `cumulativeSeries` (best-to-date).
-`ProgressChart` also appends a dashed `${key}__p` projection series per lift from
-`nextSessionSuggestion` (`projectedE1rm` in e1rm mode, `projectedWeight` in max-weight),
-drawn to a synthetic future date; tooltips ignore any `__p` dataKey.
+**e1RM is never drawn, labelled, or printed anywhere in the UI.** It survives only *inside*
+`metrics.ts`, where it is load-bearing and invisible: `isStagnant` (the plateau check), `heavyTopSet`
+(~90 % of e1RM), the DUP cold-start load seed, and the goal projection. There is no metric-mode
+toggle — `MetricMode`, `mode.ts`, `useMetricMode.ts` and `ModeToggle.tsx` were **removed**, not
+hidden. Don't reintroduce a mode; don't surface an estimate. (Removing Epley from the *engine* is a
+different and much larger project — it would require re-deriving "90 % of *what*".)
+
+The consequence is what shapes both charts, and it is not obvious: **e1RM's one real virtue was
+rep-normalization** — it made a heavy day and a light day comparable on one axis. The engine runs
+**DUP**, deliberately alternating heavy/moderate/light. So a raw heaviest-set-per-session line
+**zigzags by design** (a light day is a 30 kg cliff that is *not* a regression), and e1RM was the
+thing hiding it. Take e1RM away and any chart that still compares across rep ranges starts lying.
+Hence:
+
+- **The `'all'` chart plots best-to-date** (`cumulativeSeries`) — monotone by construction, every
+  point a weight really lifted. Its `detail` carries the reps of the standing record and the date it
+  was set, for the tooltip. **Accepted cost:** a best-to-date line *cannot descend*, so a deload or a
+  layoff reads as **flat, never as a fall**. That's why dots (`makePrDot`) mark **only** the sessions
+  where the record actually advanced — a flat stretch with no dots is the "nothing new here" signal.
+  Don't dot every point; it would imply a PR every session.
+- **The drill-down doesn't compare across rep ranges at all** — it stops plotting *max weight* and
+  plots the **sets themselves**. See below.
+
+`ProgressChart` still appends a dashed `${key}__p` projection per lift from `nextSessionSuggestion`
+(`projectedWeight`) to a synthetic future date; tooltips ignore any `__p` dataKey. `projValue`
+**suppresses the projection when it wouldn't beat the standing record** — on a monotone line a
+projected dip is meaningless.
 
 ### Progress scope (`ProgressChart` ⊃ `LiftDetail`)
 
-`ProgressChart` owns a local **`Scope = 'all' | LiftKey`**. `'all'` is the four-line chart above; a
-`LiftKey` renders `LiftDetailView` (`LiftDetail.tsx` — the old per-lift card, **unwrapped**: no
-`ChartCard`, no selector of its own) in the same card. The two views are never needed at once, which
-is why they're one card and not two.
+`ProgressChart` owns a local **`Scope = 'all' | LiftKey`**. `'all'` is the best-to-date four-line
+chart; a `LiftKey` renders `LiftDetailView` (`LiftDetail.tsx`, **unwrapped**: no `ChartCard`, no
+selector of its own) in the same card. The two views are never needed at once, which is why they're
+one card and not two.
 
-Three things here are load-bearing:
+**The drill-down is a set-block chart, and its y-axis is kg of *volume*, not kg of weight.** From
+`liftSetSeries`: one **column** per session, one gray **tray** per set, one **block** per rep, each
+block as tall as that set's weight — so a column's height *is* that session's volume for the lift, and
+weight / reps / sets / volume all read off one picture. Plain divs, not Recharts (which can't nest
+per-rep blocks inside per-set trays); `FrequencyHeatmap` is the precedent. Above it, a headline shows
+the lift's all-time heaviest set, plus **two rates from `liftGrowth`** — see below.
 
-- **The drill-down deliberately ignores `MetricMode`.** It always plots *both* e1RM (`Area`) and the
-  heaviest set (dashed `Line`) on **one kg axis** — the only view in the app where the two are
-  comparable, and so the only way to see whether an e1RM gain is real load or rep inflation. (Never a
-  dual axis; see Conventions.) The consequence is accepted and intentional: in this scope the header's
-  `ModeToggle` still drives `StatCards` but visibly does nothing to the chart. Don't "fix" that by
-  making the detail mode-aware — that deletes the view's entire reason to exist.
-- **The scope selector is a separate control from the legend chips.** The chips *multi-select*
-  (hide/show lines) and must keep doing so. Overloading a chip click with "drill down" too would make
-  neither interaction predictable.
-- **The Goals switch is *not* gated on max-weight mode in the drill-down** (it is in `'all'`, where
-  `goalsOn = mode === 'maxWeight' && showGoals`). A goal is a max-weight quantity, and the drill-down
-  always plots the heaviest-set line — so the target line is meaningful there in either mode.
+This replaced a three-line heavy/moderate/light rep-range stream chart (`liftStreamSeries` /
+`streamSummary`, both **deleted**). **Do not reinstate it.** The rep-range split was removed on
+purpose: the drill-down's question is now "what did a session *look* like", not "is each rep range
+getting heavier". `classifyFocus`, `FOCUS_COLOR`, `FOCUS_META`, `dayFocusMap` and `focusMix` all
+survive — the heatmap's Intensity mode, the DUP engine and `NextSession`'s `FocusBanner` still need
+them — but **nothing colors this card by focus**, and no surface answers per-rep-range progression
+any more. That is the accepted price of the trade below.
+
+Six things here are load-bearing:
+
+- **Height is volume, so weight is nearly invisible — that is the deliberate trade, not a bug.** At a
+  480 px body, px/kg runs 0.15–0.21, so a 60 kg block and a 50 kg block differ by about **2 px**.
+  Weight is legible **only** in the PR headline and the hover tooltip (which therefore lists *every*
+  set in full — it's the sole readout). Don't "fix" this with a weight axis, a shade ramp keyed to
+  weight, a second panel, or focus hues. Volume was chosen for the axis with this cost on the table.
+- **Weight and volume are anti-correlated under DUP, so the tallest column is usually the *lightest*
+  session.** Jul 8 bench: 60 kg — the heaviest working load — and 900 kg, the *shortest* column. Jul
+  10: 50 kg, and 1700 kg, the tallest. Correct by definition. A reader who expects "taller = stronger"
+  will read this chart exactly backwards; the subtitle and footnote exist to prevent that.
+- **Tray and rep separators are zero-height chrome** (`outline` + `inset box-shadow`), never inserted
+  gaps or padding. If they took real height, a 5-set session would render taller than a 3-set session
+  of the same volume and the chart's one claim — height *is* volume — would quietly be false. (The
+  gaps *between sessions* are ordinary flex `gap` — horizontal, so they cost nothing.)
+- **Blocks and trays are square-cornered, and that is not a style choice.** A block's *height* is the
+  weight, and a corner radius eats the ends of the very rectangle that encodes it — worst on a light
+  load at a squashed scale, where a block is only a few px tall.
+- **The two separators differ in *kind*, not in width — otherwise the sets can't be counted**, which is
+  the tray's entire job. Because the blocks are square and butted, gray appears **only** at a set's
+  edges, never between reps: **gray (`--surface-2`) = the tray around one set**; **a translucent dark
+  score line = the next rep**. Two arrangements have already failed here: making both separators gray
+  (3 px vs 1 px) made the sets vanish into the reps, and *rounding the blocks* did the same, because
+  gray then showed between every rep. Keep gray exclusive to set edges.
+- **The y-domain is the biggest session *on screen*** — `Math.max(...shown)`, not the full history. So
+  the tallest visible column always fills the plot. **Consequence, accepted:** dragging the span slider
+  rescales every block, so a block's pixel height is only comparable *within* one view. `liftGrowth` is
+  scoped to the same window for the same reason — the whole card describes the sessions you can see.
+  The slider carries **its own index** (not `ProgressChart`'s: "BP session 20" and "all-lift date 20"
+  are different dates).
+- **Warmups are excluded** (`if (r.lift !== lift || r.isWarmup)`, the same guard as `sessionVolume` and
+  `dailyMetrics`), and `volume` is rounded the same way. So a column's kg **equals** that lift's segment
+  of the Session-volume card's bar for the same date, exactly, and the heatmap's kg for that day.
+  Including warmups would inflate a bench day ~29 % and put this card at odds with both. There's a
+  regression test asserting the agreement (`metrics.blocks.test.ts`).
+
+**The two rates (`liftGrowth`) exist because the blocks can't say either thing.** The axis is volume,
+so weight is invisible — hence **Max weight** (kg, + kg/wk); and a single column has no trend — hence
+**Weekly volume** (kg/wk, + %/wk). They use *different statistics on purpose*:
+
+- **Max weight takes the window's running max**, not a fit through the per-session top sets. The engine
+  runs DUP, so top weight alternates heavy/light **by design** — a fit would measure where the window
+  happened to start and end in the cycle, and a window ending on a light day would print a **loss**
+  while the record never fell. A running max only climbs, so its slope is "how fast the record
+  advanced". There's a regression test for exactly this.
+- **Weekly volume takes a least-squares slope**, because it's a *level*, not a record — and it's shown
+  as a **% of its own mean** so it reads next to a kg/wk without a second unit. **Rest weeks inside the
+  window are filled in as 0**: a week you didn't train really was a zero-volume week, and dropping it
+  would flatter the trend.
+- A rate is **null (`—`) rather than 0** when the window is too short to have one (under a week /
+  under two weeks). Don't substitute a zero; it would read as "flat" instead of "unknown".
+
+Two consequences worth knowing rather than fixing: a day with **two logged workouts** merges into one
+column (`liftSetSeries` groups by `dateKey`, as `sessionVolume` does — a "training day"), so it can
+tower over its neighbours and squash them (2026-05-03 does this to the squat) — the span slider is the
+escape hatch, since the domain follows what's shown. And **the goal `ReferenceLine` is gone from this
+scope**: a goal is a
+*max-weight* kg number and has no coordinate on a volume axis, so `ProgressChart` **hides** the Goals
+switch when `scope !== 'all'` rather than leaving a dead control on screen.
+
+Also load-bearing: **the scope selector is a separate control from the legend chips.** The chips
+*multi-select* (hide/show lines) and must keep doing so. Overloading a chip click with "drill down"
+would make neither interaction predictable.
 
 `Suggestion` (from `nextSessionSuggestion`) is structured, not a headline string: it carries
 the `prev` top set, target `load/reps/sets`, per-field deltas, and the projections. The routine
@@ -269,8 +353,10 @@ unreachable and kept only as the fallback return.
 
 Per-lift **max-weight** targets, **recommendation-only** (no editing, no persistence). The **3-month**
 target is drawn on `ProgressChart` as a dashed horizontal `ReferenceLine` per visible lift, gated by a
-**Goals switch** (local `showGoals` state) and shown **only in max-weight mode** (`goalsOn = mode ===
-'maxWeight' && showGoals`) since goals are a max-weight quantity. Its due-date is the next fixed
+**Goals switch** (local `showGoals` state; `goalsOn = showGoals`). The goal is a **max-weight**
+quantity, so it is meaningful **only in the `'all'` scope**: the drill-down's axis is kg of *volume*,
+where a 65 kg target has no coordinate. The switch is therefore **hidden** when `scope !== 'all'` — not
+disabled, not left drawing nothing — so no dead control sits on screen. Its due-date is the next fixed
 calendar quarter-end from `quarterCheckpoints` in `src/lib/goals.ts` (which also holds `HORIZONS` and
 `weeksUntil`). `metrics.ts` provides `recommendedGoals` — **history-driven, bounded by diminishing
 returns**: it projects `recentRatePerWeek` forward a quarter at a time with per-period **decay** (mid
@@ -286,7 +372,7 @@ mildly stalled, pushes a rep instead of a soft deload (hard deloads/load-jumps u
 computes the goal-aware `suggestions` **once** and passes them to both `NextSession` (pace chip) and
 `ProgressChart` (dotted next-session projection). `ProgressChart` also owns a **span slider** (local
 `startIdx`) that slices the visible date range; index-keyed end-labels/dots are offset by the slice
-start. Reasoning/evidence live in README's "How goals work".
+start. Reasoning/evidence live in `docs/METHOD.md`'s "How goals work".
 
 ### Theming
 
@@ -308,14 +394,16 @@ theme.
 - **Warmup sets** are the rows with `Set Order === "W"` (`isWarmup`). They are **excluded
   from working volume and frequency**, but kept for max-based metrics (a warmup never wins
   a max, so it's harmless).
-- **e1RM is Epley** (`weight * (1 + reps/30)`). If you add another formula, put it in
-  `parse.ts`/`metrics.ts` and keep the display note in `Dashboard.tsx`'s footer in sync.
+- **Every plotted and printed number is a weight actually lifted.** e1RM is Epley
+  (`weight * (1 + reps/30)`) and stays **engine-internal** — never render it. See "Nothing
+  estimated is ever plotted" above before you reach for `bestE1rm` in a component.
 - **Colors follow the dataviz skill's validated palette**, exposed as CSS vars
-  (`--lift-bp/-sq/-dl/-ohp`, sequential `--seq-*`, ink/surface roles) and redefined per
-  theme block in `src/index.css`. A lift's color follows the entity everywhere; don't
+  (`--lift-bp/-sq/-dl/-ohp`, sequential `--seq-*`, focus `--focus-*`, ink/surface roles) and
+  redefined per theme block in `src/index.css`. A lift's color follows the entity everywhere; don't
   hardcode hex in components — use the `color` on its `LIFTS` entry (a `var(--lift-*)`
-  reference) or the CSS var directly, so all three themes stay correct. **Never build a
-  dual-axis chart** (see `LiftDetail`: e1RM and heaviest set share one kg axis on purpose).
+  reference), `FOCUS_COLOR` for a rep range, or the CSS var directly, so all three themes stay
+  correct. **Never build a dual-axis chart** (see `LiftDetail`: three rep-range streams share one kg
+  axis on purpose).
 - **Recharts marks must set `isAnimationActive={false}`.** Grow-in animation renders blank
   under throttled requestAnimationFrame (headless/screenshots, and a flash on load). All
   Lines/Areas/Bars here disable it — match that when adding charts.
@@ -327,7 +415,7 @@ theme.
 - **New lift:** add an entry to `LIFTS` in `types.ts` (key, label, exact `exercise` string,
   a `--lift-*` CSS var color) and a matching var in **every `[data-theme]` block** in
   `index.css`. Metrics and StatCards pick it up automatically; the `LiftKey`-typed fields in
-  `e1rmSeries`/`cumulativeSeries`/`weeklyVolume` need the new key added.
+  `cumulativeSeries`/`weeklyVolume` need the new key added.
 - **New theme:** add it to `THEMES` in `src/lib/theme.ts`, add a `[data-theme='…']` block in
   `index.css`, and update the theme-id list in the inline script in `index.html`.
 - **New chart:** wrap it in `ChartCard`, reuse `ChartTooltip`, add a `metrics.ts` function
@@ -346,7 +434,8 @@ On the user's Mac this is automated: `scripts/sync-data.sh`, run by the
 `~/Library/Mobile Documents/com~apple~CloudDocs/StrongExports` for a new Strong export
 and — only if its content differs from the committed CSV — copies it to
 `strong_workouts.csv`, commits, and pushes to `main`. No code change involved; see the
-"Automatic sync via iCloud Drive" section in `README.md` for the one-time setup
+collapsed "auto-sync new exports from iCloud Drive" block under "Use it with your own
+data" in `README.md` for the one-time setup
 (Full Disk Access for `/bin/bash` + Terminal, since iCloud Drive is TCC-protected) and
 the manual fallback (replace the CSV, commit, push).
 
