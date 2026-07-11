@@ -9,6 +9,7 @@ import LatestWorkout from './LatestWorkout'
 import NextSession from './NextSession'
 import ProgressChart from './ProgressChart'
 import VolumeChart from './VolumeChart'
+import SessionVolumeChart from './SessionVolumeChart'
 import FrequencyHeatmap from './FrequencyHeatmap'
 import LiftDetail from './LiftDetail'
 import SessionLog from './SessionLog'
@@ -66,6 +67,7 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
           <VolumeChart rows={rows} />
           <FrequencyHeatmap rows={rows} />
         </div>
+        <SessionVolumeChart rows={rows} />
         <LiftDetail rows={rows} />
         <SessionLog rows={rows} />
       </div>

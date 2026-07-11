@@ -249,6 +249,93 @@ export function weeklyVolume(rows: SetRow[]): WeekVolume[] {
   return weeks
 }
 
+// ---- Session volume (per training day) ---------------------------------------
+
+// How many prior sessions define "usual". ~2 weeks at a 2-3x/week cadence: long
+// enough to be stable against the large session-to-session spread, short enough to
+// follow a progression block rather than lag behind it.
+export const SESSION_BASELINE_WINDOW = 6
+
+// UTC midnight for a "YYYY-MM-DD" key. Anchoring to UTC keeps a day-count subtraction
+// exact across a DST boundary, where local midnights are 23 or 25 hours apart.
+function dayTs(dateKey: string): number {
+  const [y, m, d] = dateKey.split('-').map(Number)
+  return Date.UTC(y, m - 1, d)
+}
+
+export interface SessionVolume {
+  dateKey: string
+  label: string
+  ts: number
+  BP: number
+  SQ: number
+  DL: number
+  OHP: number
+  total: number
+  /** Mean total of the previous <=6 sessions. Null on the very first session. */
+  baseline: number | null
+  /** Percent above/below the baseline. Null wherever baseline is. */
+  deltaPct: number | null
+  /** Whole days since the previous session. Null on the very first session. */
+  restDays: number | null
+}
+
+// Same accumulation rule as weeklyVolume (big four, working sets only), grouped by
+// training day instead of ISO week, plus a trailing baseline each session is read
+// against. Rest days are absent rather than zero: the caller plots training days.
+export function sessionVolume(rows: SetRow[]): SessionVolume[] {
+  const byDay = new Map<string, SessionVolume>()
+  for (const r of rows) {
+    if (!r.lift || r.isWarmup) continue
+    let s = byDay.get(r.dateKey)
+    if (!s) {
+      s = {
+        dateKey: r.dateKey,
+        label: `${r.date.getMonth() + 1}/${r.date.getDate()}`,
+        ts: dayTs(r.dateKey),
+        BP: 0,
+        SQ: 0,
+        DL: 0,
+        OHP: 0,
+        total: 0,
+        baseline: null,
+        deltaPct: null,
+        restDays: null,
+      }
+      byDay.set(r.dateKey, s)
+    }
+    const vol = r.weight * r.reps
+    s[r.lift] += vol
+    s.total += vol
+  }
+
+  const sessions = [...byDay.values()].sort((a, b) => a.ts - b.ts)
+  for (const s of sessions) {
+    s.BP = round0(s.BP)
+    s.SQ = round0(s.SQ)
+    s.DL = round0(s.DL)
+    s.OHP = round0(s.OHP)
+    // Sum the rounded parts rather than rounding the true sum: the tooltip prints the
+    // per-lift rows next to this total, so they have to add up on screen. Costs at most
+    // ~1 kg of drift against weeklyVolume, which rounds the other way round.
+    s.total = s.BP + s.SQ + s.DL + s.OHP
+  }
+
+  // Baseline runs over the whole history, so it stays the same no matter how the
+  // view is later sliced. An expanding mean until the window fills, so only the
+  // first session (which has nothing to compare against) goes without one.
+  sessions.forEach((s, i) => {
+    if (i === 0) return
+    const prev = sessions.slice(Math.max(0, i - SESSION_BASELINE_WINDOW), i)
+    const mean = prev.reduce((sum, p) => sum + p.total, 0) / prev.length
+    s.baseline = round0(mean)
+    s.deltaPct = mean > 0 ? round0(((s.total - mean) / mean) * 100) : null
+    s.restDays = Math.round((s.ts - sessions[i - 1].ts) / 86400000)
+  })
+
+  return sessions
+}
+
 // ---- Training frequency (calendar heatmap) -----------------------------------
 
 export interface DayActivity {

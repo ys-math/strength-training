@@ -31,6 +31,13 @@ CSV export. Modern dark UI, deployed free on GitHub Pages.
   [the theory → formula map](#the-science-theory--formula-map)).
 - **Weekly volume** — working tonnage (weight × reps), warmup sets excluded.
 - **Training frequency** — GitHub-style calendar heatmap of working sets per day.
+- **Session volume** — the same tonnage, but per training session, so you can see how hard any one
+  day ran. A dashed line tracks your **previous-6-session average** (≈2 weeks), and a chip reads how
+  the last session compares to it. Weekly volume answers *"am I doing enough?"*; this answers *"was
+  that day unusually heavy?"* — the question that flags creeping fatigue. Rest days are collapsed
+  (the axis is training days, not the calendar); hover a bar for the per-lift split, the deviation
+  from your usual, and the rest you took beforehand. Same big-four, warmups-excluded rule as Weekly
+  volume, so the two cards agree.
 - **Per-lift detail** — est. 1RM vs. heaviest set for any single lift.
 - **Session log** — every exercise, set, and volume per workout.
 - **Themes** — switch between Modern Dark, Modern Light, and Cozy; your choice is remembered.

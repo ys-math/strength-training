@@ -47,7 +47,8 @@ strong_workouts.csv ?raw
   `liftPR`, `e1rmSeries` (per-session best e1RM), `maxWeightSeries` (per-session heaviest
   set + its reps/set-count, for the max-weight chart), `cumulativeSeries(rows, mode)` and
   `big4Series(rows, mode)` (each lift's / the summed best-to-date value, only climbs),
-  `currentPrev`, `weeklyVolume` (ISO week), `dailyActivity`, `sessionDetails`, `overallStats`,
+  `currentPrev`, `weeklyVolume` (ISO week), `sessionVolume` (per training day), `dailyActivity`,
+  `sessionDetails`, `overallStats`,
   and `nextSessionSuggestion(rows, goalCtx?, config?, now?, focus?)` (per-lift load × reps heuristic — config
   in `DEFAULT_SUGGESTION_CONFIG`, theory in README's "How suggestions work" / "theory → formula map").
   It also emits a heavy **`topSet`** (SAID/Size Principle, `heavyTopSet` at ~90% e1RM) and a
@@ -55,6 +56,34 @@ strong_workouts.csv ?raw
   `now` (default `latestTs(rows)`, `Date.now()` from `Dashboard`) is the detraining reference.
 - **`src/components/`** — presentational; each takes `rows: SetRow[]` and derives via
   `useMemo`. `Dashboard.tsx` composes them.
+
+### Session volume (`sessionVolume` → `SessionVolumeChart`)
+
+Per-**session** tonnage, next to `weeklyVolume`'s per-week tonnage. Same accumulation rule (big four,
+working sets, warmups excluded — so the two cards agree numerically), grouped by `dateKey`. Each
+session carries a `baseline` (mean `total` of the **previous 6 sessions**, `SESSION_BASELINE_WINDOW`),
+a `deltaPct` against it, and `restDays` since the last session. The window is an **expanding** mean
+until 6 priors exist, so only the very first session has a null baseline. Weekly volume answers "am I
+doing enough"; this answers "was that day unusually heavy" — the fatigue question.
+
+Two things here are load-bearing and easy to break:
+
+- **The `Line` over the bars is not the line that was reverted in `c65f7fd`.** That one plotted
+  `total` — a redundant retracing of the bar tops, which is why it added nothing. This one plots the
+  *trailing baseline*, a moving reference the bars are measured **against**; it carries information no
+  bar contains, and the card's whole purpose collapses without it. It's deliberately given a
+  different visual role (`--text-muted`, dashed, dotless) so it never reads as a fifth series. Don't
+  pattern-match it to the old revert and delete it.
+- **The baseline is computed over the full history, then sliced for display.** `SessionVolumeChart`'s
+  span slider (copied from `ProgressChart`) slices `sessionVolume(rows)` *after* the fact. Computing
+  it on the visible slice instead would give the first six visible bars a baseline that silently
+  changes as you drag the slider — it would look like a data bug, not a code bug.
+
+The card uses a **custom tooltip** rather than the shared `ChartTooltip`, which can only list series;
+this one also prints the session total, the Δ% vs. usual, and the rest taken beforehand. There is
+deliberately **no spike badge or threshold outline**: volume trends upward through any progression
+block (July 2026 sessions run +21 % to +177 % over baseline), so a fixed threshold would fire
+constantly and train you to ignore it.
 
 ### Metric mode (est. 1RM vs. actual max weight)
 
