@@ -788,6 +788,22 @@ export const FOCUS_META: Record<DayFocus, { label: string; intent: string }> = {
   light: { label: 'Volume day', intent: 'hypertrophy' },
 }
 
+// The one focus → color mapping, the twin of FOCUS_META: wherever a focus is drawn
+// (heatmap cell, Next-session banner chip) it wears this hue, so the two cards can't
+// disagree about what "heavy" looks like.
+//
+// Intensity is colored *categorically* — one hue per focus, cool → hot — not as steps of
+// the sequential ramp: at 13px, three shades of one blue don't separate, and a darker blue
+// says nothing about what "heavy" means. Red/green is a known color-vision collision
+// (moderate and heavy are the pair that merges under deuteranopia); on a single-reader
+// dashboard that cost was weighed and accepted. It's a choice, not an oversight — the
+// tooltip names the focus in words in every mode, which is the fallback.
+export const FOCUS_COLOR: Record<DayFocus, string> = {
+  heavy: 'var(--focus-heavy)',
+  moderate: 'var(--focus-moderate)',
+  light: 'var(--focus-light)',
+}
+
 // Classify a rep count into its focus by the configured window ceilings: at/below
 // the heavy window's top is heavy, at/below the moderate window's top is moderate,
 // otherwise light. Uses ceilings (not full ranges) so reps that fall between two

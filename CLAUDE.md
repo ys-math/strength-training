@@ -115,12 +115,27 @@ Four things here are load-bearing:
   doesn't depend on what else is on screen. Absolute kg cut points were rejected: they go stale as the
   lifter gets stronger.
 
-Intensity is *ordinal* (light < moderate < heavy), not categorical, so it rides the same sequential
-ramp (`FOCUS_SHADE` → `--seq-1/2/4`) instead of spending new hues — hues carry lift identity here. The
-only mode-dependent chrome is the grid, the legend's end-caps (`Less → More` vs. `Light → Heavy`), and
-nothing else: the title and frequency chips are true in every mode. The tooltip **always prints all
-three metrics** regardless of mode — color is for scanning, so reading a single day should never
-require a toggle.
+Sets and volume are *ordinal*, so they read off the sequential ramp. **Intensity is drawn
+*categorically*** — one hue per focus, cool → hot (`--focus-light/-moderate/-heavy`, blue/green/red,
+redefined in every `[data-theme]` block; `cozy` re-tones them to dusty-blue/sage/terracotta). It rode
+the ramp originally (`FOCUS_SHADE` → `--seq-1/2/4`, on the theory that intensity is ordinal), and that
+failed on both counts: at 13 px, three shades of one blue don't separate — so the heavy/light
+*distribution*, the whole point of the mode, didn't read at a glance — and a darker blue says nothing
+about what "heavy" *means*. **Red/green is a known color-vision collision** (moderate and heavy are
+exactly the pair that merges under deuteranopia); on a single-reader dashboard that cost was weighed
+and accepted, and the tooltip names the focus in words in every mode as the fallback. It's a choice,
+not an oversight — don't "fix" it back to a ramp.
+
+`FOCUS_COLOR` in `metrics.ts` is the **one** focus → color map (the twin of `FOCUS_META`, the one
+focus → label map). `NextSession`'s `FocusBanner` wears the same hue as a chip, so the heatmap and the
+banner can't disagree about what "heavy" looks like. Never inline a focus hex in a component.
+
+Mode-dependent chrome is the grid and the legend — and the legend changes *shape*, not just captions:
+a captioned ramp (`Less ▓▓▓▓▓ More`) for the ordinal modes, three **named** swatches
+(`■ Light ■ Moderate ■ Heavy`) for the categorical one, since unlabeled hues would be undecodable
+(nothing about green says "moderate"). Nothing else is mode-dependent: the title and frequency chips
+are true in every mode. The tooltip **always prints all three metrics** regardless of mode — color is
+for scanning, so reading a single day should never require a toggle.
 
 ### Metric mode (est. 1RM vs. actual max weight)
 

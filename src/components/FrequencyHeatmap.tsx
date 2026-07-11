@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
+  FOCUS_COLOR,
   FOCUS_META,
   dailyMetrics,
   frequencyStats,
@@ -8,6 +9,7 @@ import {
   quantileThresholds,
   sessionDetails,
   volumeBucket,
+  type DayFocus,
   type DayMetrics,
   type SessionDetail,
 } from '../lib/metrics'
@@ -20,12 +22,15 @@ import HeatmapMetricToggle from './HeatmapMetricToggle'
 const SEQ = ['var(--seq-0)', 'var(--seq-1)', 'var(--seq-2)', 'var(--seq-3)', 'var(--seq-4)']
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-// Intensity is *ordinal* (light < moderate < heavy), not categorical, so it rides the
-// same sequential ramp as the other modes rather than spending new hues — which here
-// carry lift identity. Three steps, spread across the ramp for separation.
-const FOCUS_SHADE = { light: 1, moderate: 2, heavy: 4 } as const
-
 const EMPTY_DAY: DayMetrics = { sets: 0, volume: 0, focus: null }
+
+// Focus labels for the legend. Deliberately the DayFocus keys, not FOCUS_META's labels
+// (whose `light` reads "Volume day") — a legend wants the scale's own vocabulary.
+const FOCUS_LEGEND: { focus: DayFocus; label: string }[] = [
+  { focus: 'light', label: 'Light' },
+  { focus: 'moderate', label: 'Moderate' },
+  { focus: 'heavy', label: 'Heavy' },
+]
 
 // Working-set count → sequential bucket (single blue hue, light→dark).
 function bucket(count: number): number {
@@ -168,18 +173,15 @@ export default function FrequencyHeatmap({
 
   const [hover, setHover] = useState<HoverInfo | null>(null)
 
-  // Shade index 0 always means "didn't train", in every mode.
-  const shadeOf = (day: DayMetrics): number => {
-    if (day.sets === 0) return 0
-    if (metric === 'volume') return volumeBucket(day.volume, volumeThresholds)
-    if (metric === 'intensity') return day.focus ? FOCUS_SHADE[day.focus] : 0
-    return bucket(day.sets)
+  // --seq-0 always means "didn't train", in every mode. Sets and volume are ordinal, so
+  // they read off the sequential ramp; intensity is categorical, so it reads off its own
+  // hues (see FOCUS_COLOR).
+  const colorOf = (day: DayMetrics): string => {
+    if (day.sets === 0) return SEQ[0]
+    if (metric === 'volume') return SEQ[volumeBucket(day.volume, volumeThresholds)]
+    if (metric === 'intensity') return day.focus ? FOCUS_COLOR[day.focus] : SEQ[0]
+    return SEQ[bucket(day.sets)]
   }
-
-  const legend =
-    metric === 'intensity'
-      ? { low: 'Light', high: 'Heavy', swatches: [1, 2, 4].map((i) => SEQ[i]) }
-      : { low: 'Less', high: 'More', swatches: SEQ }
 
   const dayLabels = ['Mon', '', 'Wed', '', 'Fri', '', '']
   const chips: { label: string; value: string }[] = [
@@ -247,7 +249,7 @@ export default function FrequencyHeatmap({
                     <div
                       className="h-[13px] w-[13px] rounded-sm"
                       style={{
-                        background: cell.inRange ? SEQ[shadeOf(cell.day)] : 'transparent',
+                        background: cell.inRange ? colorOf(cell.day) : 'transparent',
                         outline: cell.day.sets > 0 ? '1px solid var(--border)' : 'none',
                       }}
                     />
@@ -258,12 +260,33 @@ export default function FrequencyHeatmap({
           </div>
         )}
 
+        {/* The legend's *shape* says which kind of scale is live: a captioned ramp for the
+            ordinal modes, named swatches for the categorical one — unlabeled hues would be
+            unreadable, since nothing about green says "moderate". */}
         <div className="flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-          <span>{legend.low}</span>
-          {legend.swatches.map((c, i) => (
-            <span key={i} className="h-[11px] w-[11px] rounded-sm" style={{ background: c, outline: '1px solid var(--border)' }} />
-          ))}
-          <span>{legend.high}</span>
+          {metric === 'intensity' ? (
+            FOCUS_LEGEND.map(({ focus, label }) => (
+              <span key={focus} className="flex items-center gap-1">
+                <span
+                  className="h-[11px] w-[11px] rounded-sm"
+                  style={{ background: FOCUS_COLOR[focus], outline: '1px solid var(--border)' }}
+                />
+                {label}
+              </span>
+            ))
+          ) : (
+            <>
+              <span>Less</span>
+              {SEQ.map((c, i) => (
+                <span
+                  key={i}
+                  className="h-[11px] w-[11px] rounded-sm"
+                  style={{ background: c, outline: '1px solid var(--border)' }}
+                />
+              ))}
+              <span>More</span>
+            </>
+          )}
         </div>
       </div>
 

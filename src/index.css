@@ -33,6 +33,11 @@
   --seq-2: #256abf;
   --seq-3: #3987e5;
   --seq-4: #6da7ec;
+
+  /* Categorical intensity (DUP focus) — cool → hot */
+  --focus-light:    #3987e5;
+  --focus-moderate: #199e70;
+  --focus-heavy:    #d64545;
 }
 
 [data-theme='modern-light'] {
@@ -60,6 +65,10 @@
   --seq-2: #7fa8e0;
   --seq-3: #3987e5;
   --seq-4: #1a56ad;
+
+  --focus-light:    #2166c9;
+  --focus-moderate: #0f8a63;
+  --focus-heavy:    #c0392b;
 }
 
 [data-theme='cozy'] {
@@ -89,6 +98,11 @@
   --seq-2: #c99a5c;
   --seq-3: #b5563a;
   --seq-4: #8a3b26;
+
+  /* Same cool → hot reading, re-toned into cozy's register. */
+  --focus-light:    #5b7fa6; /* dusty blue */
+  --focus-moderate: #5c8a52; /* sage       */
+  --focus-heavy:    #b5563a; /* terracotta */
 }
 
 html,

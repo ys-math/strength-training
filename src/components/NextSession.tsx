@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import {
   DEFAULT_SUGGESTION_CONFIG,
+  FOCUS_COLOR,
   FOCUS_META,
   hasRpeData,
   nextSessionFocus,
@@ -37,8 +38,15 @@ function FocusBanner({ rows }: { rows: SetRow[] }) {
       style={{ border: '1px solid var(--border)', background: 'var(--surface-1)' }}
     >
       <div className="flex items-baseline gap-2">
-        <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-          {meta.label}
+        {/* Same hue the heatmap paints this focus with, so the two cards visibly agree. */}
+        <span className="flex items-center gap-1.5">
+          <span
+            className="h-[9px] w-[9px] shrink-0 rounded-sm"
+            style={{ background: FOCUS_COLOR[plan.focus] }}
+          />
+          <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+            {meta.label}
+          </span>
         </span>
         <span className="text-[11px] font-medium tabular-nums" style={{ color: 'var(--text-muted)' }}>
           {lo}–{hi} reps
