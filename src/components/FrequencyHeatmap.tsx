@@ -1,12 +1,31 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { dailyActivity, frequencyStats, overallStats, sessionDetails, type SessionDetail } from '../lib/metrics'
-import { fmtLongDate, shortExerciseName } from '../lib/format'
+import {
+  FOCUS_META,
+  dailyMetrics,
+  frequencyStats,
+  overallStats,
+  quantileThresholds,
+  sessionDetails,
+  volumeBucket,
+  type DayMetrics,
+  type SessionDetail,
+} from '../lib/metrics'
+import { fmtLongDate, fmtTonnage, shortExerciseName } from '../lib/format'
+import type { HeatmapMetric } from '../lib/heatmapMetric'
 import type { SetRow } from '../lib/types'
 import ChartCard from './ChartCard'
+import HeatmapMetricToggle from './HeatmapMetricToggle'
 
 const SEQ = ['var(--seq-0)', 'var(--seq-1)', 'var(--seq-2)', 'var(--seq-3)', 'var(--seq-4)']
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// Intensity is *ordinal* (light < moderate < heavy), not categorical, so it rides the
+// same sequential ramp as the other modes rather than spending new hues — which here
+// carry lift identity. Three steps, spread across the ramp for separation.
+const FOCUS_SHADE = { light: 1, moderate: 2, heavy: 4 } as const
+
+const EMPTY_DAY: DayMetrics = { sets: 0, volume: 0, focus: null }
 
 // Working-set count → sequential bucket (single blue hue, light→dark).
 function bucket(count: number): number {
@@ -23,7 +42,7 @@ function keyOf(d: Date) {
 
 interface HoverInfo {
   key: string
-  count: number
+  day: DayMetrics
   rect: DOMRect
 }
 
@@ -33,12 +52,16 @@ interface HoverInfo {
 // quirk: overflow-x:auto forces overflow-y to auto as well when left unset), so
 // an absolutely-positioned tooltip nested inside it gets cut off top/bottom, not
 // just at the left/right edges.
+//
+// It prints all three metrics whatever the active mode is: color is for scanning the
+// calendar, so nobody should have to switch modes just to read one day.
 function HeatmapTooltip({ hover, session }: { hover: HoverInfo; session?: SessionDetail }) {
   const HALF_WIDTH = 110 // half of max-w-[220px]
   const idealLeft = hover.rect.left + hover.rect.width / 2
   const left = Math.min(Math.max(idealLeft, 8 + HALF_WIDTH), window.innerWidth - 8 - HALF_WIDTH)
   const showBelow = hover.rect.top < 90
 
+  const { sets, volume, focus } = hover.day
   const activeExercises = session?.exercises.filter((e) => e.workingSets > 0) ?? []
 
   return (
@@ -57,8 +80,10 @@ function HeatmapTooltip({ hover, session }: { hover: HoverInfo; session?: Sessio
         {fmtLongDate(hover.key)}
       </div>
       <div>
-        {hover.count} working set{hover.count === 1 ? '' : 's'}
+        {sets} working set{sets === 1 ? '' : 's'}
+        {sets > 0 && ` · ${fmtTonnage(volume)}`}
       </div>
+      {focus && <div style={{ color: 'var(--text-secondary)' }}>{FOCUS_META[focus].label}</div>}
       {activeExercises.length > 0 && (
         <div className="mt-0.5" style={{ color: 'var(--text-muted)' }}>
           {activeExercises.map((e) => `${shortExerciseName(e.exercise)}×${e.workingSets}`).join(', ')}
@@ -68,12 +93,27 @@ function HeatmapTooltip({ hover, session }: { hover: HoverInfo; session?: Sessio
   )
 }
 
-export default function FrequencyHeatmap({ rows }: { rows: SetRow[] }) {
-  const { weeks, monthLabels, stats } = useMemo(() => {
-    const activity = dailyActivity(rows)
+export default function FrequencyHeatmap({
+  rows,
+  metric,
+  setMetric,
+}: {
+  rows: SetRow[]
+  metric: HeatmapMetric
+  setMetric: (m: HeatmapMetric) => void
+}) {
+  const { weeks, monthLabels, stats, totalSets, volumeThresholds } = useMemo(() => {
+    const days = dailyMetrics(rows)
     const stats = overallStats(rows)
-    type Cell = { key: string; count: number; inRange: boolean }
-    if (!stats.firstDate) return { weeks: [] as Cell[][], monthLabels: [] as (string | null)[], stats }
+    const totalSets = [...days.values()].reduce((sum, d) => sum + d.sets, 0)
+    // Bucketed against the whole history, never the rendered slice — otherwise a day's
+    // shade would depend on what else happens to be on screen.
+    const volumeThresholds = quantileThresholds([...days.values()].map((d) => d.volume))
+
+    type Cell = { key: string; day: DayMetrics; inRange: boolean }
+    if (!stats.firstDate) {
+      return { weeks: [] as Cell[][], monthLabels: [] as (string | null)[], stats, totalSets, volumeThresholds }
+    }
 
     const first = new Date(stats.firstDate)
     const last = new Date(stats.lastDate)
@@ -90,7 +130,7 @@ export default function FrequencyHeatmap({ rows }: { rows: SetRow[] }) {
       const col: Cell[] = []
       for (let i = 0; i < 7; i++) {
         const k = keyOf(cursor)
-        col.push({ key: k, count: activity.get(k) ?? 0, inRange: cursor >= first && cursor <= last })
+        col.push({ key: k, day: days.get(k) ?? EMPTY_DAY, inRange: cursor >= first && cursor <= last })
         cursor.setDate(cursor.getDate() + 1)
       }
       weeks.push(col)
@@ -115,7 +155,7 @@ export default function FrequencyHeatmap({ rows }: { rows: SetRow[] }) {
       return MONTH_SHORT[Number(candidate.key.slice(5, 7)) - 1]
     })
 
-    return { weeks, monthLabels, stats }
+    return { weeks, monthLabels, stats, totalSets, volumeThresholds }
   }, [rows])
 
   const freq = useMemo(() => frequencyStats(rows), [rows])
@@ -128,6 +168,19 @@ export default function FrequencyHeatmap({ rows }: { rows: SetRow[] }) {
 
   const [hover, setHover] = useState<HoverInfo | null>(null)
 
+  // Shade index 0 always means "didn't train", in every mode.
+  const shadeOf = (day: DayMetrics): number => {
+    if (day.sets === 0) return 0
+    if (metric === 'volume') return volumeBucket(day.volume, volumeThresholds)
+    if (metric === 'intensity') return day.focus ? FOCUS_SHADE[day.focus] : 0
+    return bucket(day.sets)
+  }
+
+  const legend =
+    metric === 'intensity'
+      ? { low: 'Light', high: 'Heavy', swatches: [1, 2, 4].map((i) => SEQ[i]) }
+      : { low: 'Less', high: 'More', swatches: SEQ }
+
   const dayLabels = ['Mon', '', 'Wed', '', 'Fri', '', '']
   const chips: { label: string; value: string }[] = [
     { label: 'Avg / week', value: `${freq.avgSessionsPerWeek}` },
@@ -138,7 +191,8 @@ export default function FrequencyHeatmap({ rows }: { rows: SetRow[] }) {
   return (
     <ChartCard
       title="Training frequency"
-      subtitle={`${stats.totalSessions} sessions · ${stats.totalWorkingSets} working sets`}
+      subtitle={`${stats.totalSessions} sessions · ${totalSets} working sets`}
+      right={<HeatmapMetricToggle metric={metric} setMetric={setMetric} />}
     >
       <div className="flex h-full flex-col justify-between">
         <div className="grid grid-cols-3 gap-2">
@@ -186,15 +240,15 @@ export default function FrequencyHeatmap({ rows }: { rows: SetRow[] }) {
                     key={cell.key}
                     style={{ gridColumn: ci + 2, gridRow: di + 2 }}
                     onMouseEnter={(e) =>
-                      cell.inRange && setHover({ key: cell.key, count: cell.count, rect: e.currentTarget.getBoundingClientRect() })
+                      cell.inRange && setHover({ key: cell.key, day: cell.day, rect: e.currentTarget.getBoundingClientRect() })
                     }
                     onMouseLeave={() => setHover(null)}
                   >
                     <div
                       className="h-[13px] w-[13px] rounded-sm"
                       style={{
-                        background: cell.inRange ? SEQ[bucket(cell.count)] : 'transparent',
-                        outline: cell.count > 0 ? '1px solid var(--border)' : 'none',
+                        background: cell.inRange ? SEQ[shadeOf(cell.day)] : 'transparent',
+                        outline: cell.day.sets > 0 ? '1px solid var(--border)' : 'none',
                       }}
                     />
                   </div>
@@ -205,11 +259,11 @@ export default function FrequencyHeatmap({ rows }: { rows: SetRow[] }) {
         )}
 
         <div className="flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-          <span>Less</span>
-          {SEQ.map((c, i) => (
+          <span>{legend.low}</span>
+          {legend.swatches.map((c, i) => (
             <span key={i} className="h-[11px] w-[11px] rounded-sm" style={{ background: c, outline: '1px solid var(--border)' }} />
           ))}
-          <span>More</span>
+          <span>{legend.high}</span>
         </div>
       </div>
 

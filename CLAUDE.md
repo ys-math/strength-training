@@ -47,7 +47,7 @@ strong_workouts.csv ?raw
   `liftPR`, `e1rmSeries` (per-session best e1RM), `maxWeightSeries` (per-session heaviest
   set + its reps/set-count, for the max-weight chart), `cumulativeSeries(rows, mode)` and
   `big4Series(rows, mode)` (each lift's / the summed best-to-date value, only climbs),
-  `currentPrev`, `weeklyVolume` (ISO week), `sessionVolume` (per training day), `dailyActivity`,
+  `currentPrev`, `weeklyVolume` (ISO week), `sessionVolume` (per training day), `dailyMetrics`,
   `sessionDetails`, `overallStats`,
   and `nextSessionSuggestion(rows, goalCtx?, config?, now?, focus?)` (per-lift load × reps heuristic — config
   in `DEFAULT_SUGGESTION_CONFIG`, theory in README's "How suggestions work" / "theory → formula map").
@@ -84,6 +84,43 @@ this one also prints the session total, the Δ% vs. usual, and the rest taken be
 deliberately **no spike badge or threshold outline**: volume trends upward through any progression
 block (July 2026 sessions run +21 % to +177 % over baseline), so a fixed threshold would fire
 constantly and train you to ignore it.
+
+### Heatmap color modes (`FrequencyHeatmap`)
+
+The Training-frequency calendar can color its cells three ways — **Sets / Volume / Intensity** —
+chosen by `HeatmapMetricToggle` in `ChartCard`'s `right` slot (state in `useHeatmapMetric` /
+`src/lib/heatmapMetric.ts`, persisted like the metric mode). All three read one map,
+`dailyMetrics(rows)` → `{ sets, volume, focus }`, which **replaced `dailyActivity`**.
+
+Four things here are load-bearing:
+
+- **This is an *encoding* switch, not the filter that `33fa31b` removed.** That one (`DayFocusToggle`)
+  *hid* the days that didn't match a heavy/light focus, so seeing your heavy days cost you sight of the
+  light ones. This one never adds or removes a cell — every training day is on the grid in every mode,
+  only the shade's meaning changes, which is what makes the heavy/light *distribution* visible at once.
+  Don't pattern-match it to that revert and delete it.
+- **Intensity has exactly one definition, and it lives in `dayFocusMap`.** That function classifies
+  *every* training day (median of its per-lift top-set reps → `classifyFocus`), and `nextSessionFocus`
+  now calls it for its `from` value. So the heatmap and the Next-session `FocusBanner` cannot label the
+  same day differently. Never re-derive "heavy" locally in a component.
+- **Everything is scoped to the big four** (`if (!r.lift || r.isWarmup) continue`, the same guard as
+  `sessionVolume`), and the tonnage is taken *from* `sessionVolume` rather than re-summed — so the
+  heatmap's kg for a day equals the Session-volume card's kg for that day, exactly. `dailyActivity` used
+  to count accessories; the card's subtitle set-count now comes from `dailyMetrics`, not
+  `overallStats.totalWorkingSets` (which still spans all exercises, as `sessionDetails` does).
+- **Shade 0 (`--seq-0`) means "didn't train", in every mode.** That leaves only *four* data shades
+  (`--seq-1..4`), so `quantileThresholds` returns **three** cut points (quartiles), not four, and
+  `volumeBucket` floors any nonzero day at 1 — a real session must never render in the empty color even
+  when every day is identical. Thresholds are computed over the **full history**, so a day's shade
+  doesn't depend on what else is on screen. Absolute kg cut points were rejected: they go stale as the
+  lifter gets stronger.
+
+Intensity is *ordinal* (light < moderate < heavy), not categorical, so it rides the same sequential
+ramp (`FOCUS_SHADE` → `--seq-1/2/4`) instead of spending new hues — hues carry lift identity here. The
+only mode-dependent chrome is the grid, the legend's end-caps (`Less → More` vs. `Light → Heavy`), and
+nothing else: the title and frequency chips are true in every mode. The tooltip **always prints all
+three metrics** regardless of mode — color is for scanning, so reading a single day should never
+require a toggle.
 
 ### Metric mode (est. 1RM vs. actual max weight)
 

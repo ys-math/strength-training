@@ -338,18 +338,58 @@ export function sessionVolume(rows: SetRow[]): SessionVolume[] {
 
 // ---- Training frequency (calendar heatmap) -----------------------------------
 
-export interface DayActivity {
-  dateKey: string
-  workingSets: number
+/** Everything the heatmap can color a day by. Big four, working sets only — so the
+ *  tonnage here is the same number the Session-volume card prints for that day. */
+export interface DayMetrics {
+  sets: number
+  volume: number
+  /** The day's rep character, by the same rule the DUP engine uses (see dayFocusMap). */
+  focus: DayFocus | null
 }
 
-export function dailyActivity(rows: SetRow[]): Map<string, number> {
-  const byDay = new Map<string, number>()
+export function dailyMetrics(rows: SetRow[], config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG): Map<string, DayMetrics> {
+  const byDay = new Map<string, DayMetrics>()
+
   for (const r of rows) {
-    if (r.isWarmup) continue
-    byDay.set(r.dateKey, (byDay.get(r.dateKey) ?? 0) + 1)
+    if (!r.lift || r.isWarmup) continue
+    const d = byDay.get(r.dateKey)
+    if (d) d.sets += 1
+    else byDay.set(r.dateKey, { sets: 1, volume: 0, focus: null })
   }
+
+  // Tonnage comes straight from sessionVolume rather than being re-summed here, so
+  // the heatmap and the Session-volume card can't disagree by a rounding step.
+  for (const s of sessionVolume(rows)) {
+    const d = byDay.get(s.dateKey)
+    if (d) d.volume = s.total
+  }
+
+  for (const [dateKey, focus] of dayFocusMap(rows, config)) {
+    const d = byDay.get(dateKey)
+    if (d) d.focus = focus
+  }
+
   return byDay
+}
+
+// The four cut points of the sequential ramp are seq-1..seq-4 — seq-0 means "didn't
+// train" — so ranking tonnage needs three cuts (quartiles), not four. Absolute kg
+// thresholds would go stale as the lifter grows; quantiles over their own history
+// self-calibrate and always spend the whole ramp.
+export function quantileThresholds(values: number[]): number[] {
+  const sorted = values.filter((v) => v > 0).sort((a, b) => a - b)
+  if (sorted.length === 0) return [0, 0, 0]
+  return [0.25, 0.5, 0.75].map((q) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))])
+}
+
+// Bucket 0 is reserved for "no training". Any day with tonnage lands in 1..4, even
+// when every day is identical (all thresholds equal) — a real session must never
+// render in the empty color.
+export function volumeBucket(volume: number, thresholds: number[]): number {
+  if (volume <= 0) return 0
+  let b = 1
+  for (const t of thresholds) if (volume > t) b += 1
+  return Math.min(b, 4)
 }
 
 export interface OverallStats {
@@ -775,23 +815,37 @@ export interface FocusPlan {
   from: DayFocus | null // the focus of your most recent training day (null with no history)
 }
 
-// Infer the next session's DUP focus: classify your most recent training day
-// (median of that day's per-lift top-set reps) and undulate one step along the
-// cycle. Global — one focus for the whole next session — matching whole-day
-// undulation. Defaults to the first cycle entry when there's nothing to classify.
+// The rep character of *every* training day: the median of that day's per-lift
+// top-set reps, classified into a DUP window. This is the single definition of what
+// makes a day heavy/moderate/light — both the next-session undulation below and the
+// heatmap's Intensity mode read it here, so the FocusBanner and the calendar can
+// never label the same day differently.
+export function dayFocusMap(rows: SetRow[], config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG): Map<string, DayFocus> {
+  const repsByDay = new Map<string, number[]>()
+  for (const lift of LIFTS) {
+    for (const t of topWorkingSets(rows, lift.key)) {
+      const list = repsByDay.get(t.dateKey)
+      if (list) list.push(t.reps)
+      else repsByDay.set(t.dateKey, [t.reps])
+    }
+  }
+
+  const out = new Map<string, DayFocus>()
+  for (const [dateKey, reps] of repsByDay) out.set(dateKey, classifyFocus(median(reps), config))
+  return out
+}
+
+// Infer the next session's DUP focus: classify your most recent training day and
+// undulate one step along the cycle. Global — one focus for the whole next session —
+// matching whole-day undulation. Defaults to the first cycle entry when there's
+// nothing to classify.
 export function nextSessionFocus(rows: SetRow[], config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG): FocusPlan {
   let latest = ''
   for (const r of rows) {
     if (r.lift && !r.isWarmup && r.dateKey > latest) latest = r.dateKey
   }
-  if (!latest) return { focus: config.dup.cycle[0], from: null }
-  const reps: number[] = []
-  for (const lift of LIFTS) {
-    const t = topWorkingSets(rows, lift.key).find((x) => x.dateKey === latest)
-    if (t) reps.push(t.reps)
-  }
-  if (reps.length === 0) return { focus: config.dup.cycle[0], from: null }
-  const from = classifyFocus(median(reps), config)
+  const from = latest ? (dayFocusMap(rows, config).get(latest) ?? null) : null
+  if (!from) return { focus: config.dup.cycle[0], from: null }
   return { focus: advanceFocus(from, config.dup.cycle), from }
 }
 

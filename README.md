@@ -30,7 +30,10 @@ CSV export. Modern dark UI, deployed free on GitHub Pages.
   [How suggestions work](#how-suggestions-work) and
   [the theory → formula map](#the-science-theory--formula-map)).
 - **Weekly volume** — working tonnage (weight × reps), warmup sets excluded.
-- **Training frequency** — GitHub-style calendar heatmap of working sets per day.
+- **Training frequency** — GitHub-style calendar heatmap, with a **Sets / Volume / Intensity**
+  switch that re-colors the same grid: working sets per day, tonnage that day (shaded against
+  your own quartiles), or how heavy the day was (heavy / moderate / light, by the same rule the
+  next-session plan undulates on). No day is ever hidden — only the shade's meaning changes.
 - **Session volume** — the same tonnage, but per training session, so you can see how hard any one
   day ran. A dashed line tracks your **previous-6-session average** (≈2 weeks), and a chip reads how
   the last session compares to it. Weekly volume answers *"am I doing enough?"*; this answers *"was
@@ -282,14 +285,17 @@ src/
     parse.ts                 CSV → typed SetRow[] (Epley e1RM, warmup flag, optional RPE)
     metrics.ts               e1RM / max-weight series, PRs, Big-4, volume, frequency, suggestions, goals
     metrics.suggestion.test.ts  Vitest coverage of the next-session branching
+    metrics.heatmap.test.ts  Vitest coverage of the heatmap's per-day metrics + bucketing
     goals.test.ts            Vitest coverage of recommended goals + goal-aware suggestions
     format.ts                date / kg / tonnage display helpers
     theme.ts                 the selectable UI themes (dark / light / cozy)
     mode.ts                  metric mode (est. 1RM vs. actual max weight)
+    heatmapMetric.ts         heatmap color mode (sets / volume / intensity)
     goals.ts                 goal horizons (3/6/12 mo) + fixed calendar-quarter checkpoints
   hooks/
     useTheme.ts              reads/writes the active theme (data-theme + localStorage)
     useMetricMode.ts         reads/writes the active metric mode (localStorage)
+    useHeatmapMetric.ts      reads/writes the heatmap color mode (localStorage)
   components/
     Dashboard.tsx            page layout; computes goal-aware suggestions once, passes them down
     StatCards.tsx            Big-4 total + per-lift PR cards
@@ -299,7 +305,8 @@ src/
     ProgressChart.tsx        headline chart: dotted next-session projection, 3-mo goal lines (toggle),
                              span slider; est. 1RM ⇄ max weight
     VolumeChart.tsx          weekly stacked tonnage bars
-    FrequencyHeatmap.tsx     calendar heatmap (plain divs, not Recharts)
+    FrequencyHeatmap.tsx     calendar heatmap (plain divs, not Recharts); sets / volume / intensity shading
+    HeatmapMetricToggle.tsx  sets / volume / intensity switch for the heatmap
     LiftDetail.tsx           per-lift est. 1RM vs. heaviest set
     SessionLog.tsx           collapsible full history of every session
     ModeToggle.tsx           est. 1RM / max weight switch in the header

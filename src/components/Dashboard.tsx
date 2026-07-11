@@ -4,6 +4,7 @@ import { nextSessionSuggestion, overallStats, recommendedGoals, type GoalContext
 import { fmtLongDate } from '../lib/format'
 import { quarterCheckpoints, weeksUntil } from '../lib/goals'
 import { useMetricMode } from '../hooks/useMetricMode'
+import { useHeatmapMetric } from '../hooks/useHeatmapMetric'
 import StatCards from './StatCards'
 import LatestWorkout from './LatestWorkout'
 import NextSession from './NextSession'
@@ -19,6 +20,7 @@ import ThemeSwitcher from './ThemeSwitcher'
 export default function Dashboard({ rows }: { rows: SetRow[] }) {
   const stats = useMemo(() => overallStats(rows), [rows])
   const { mode, setMode } = useMetricMode()
+  const { metric: heatmapMetric, setMetric: setHeatmapMetric } = useHeatmapMetric()
 
   // Make the next-session suggestion goal-aware against the recommended short-term
   // target (due at the next calendar quarter-end). Computed once here, then passed to
@@ -65,7 +67,7 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
         <ProgressChart rows={rows} mode={mode} suggestions={suggestions} />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <VolumeChart rows={rows} />
-          <FrequencyHeatmap rows={rows} />
+          <FrequencyHeatmap rows={rows} metric={heatmapMetric} setMetric={setHeatmapMetric} />
         </div>
         <SessionVolumeChart rows={rows} />
         <LiftDetail rows={rows} />
