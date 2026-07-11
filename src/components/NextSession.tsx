@@ -192,8 +192,8 @@ export default function NextSession({
         })}
       </div>
       <p className="mt-4 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-        Heuristic guidance from set history — see “How suggestions work” in the README for the reasoning and
-        its limits.{' '}
+        Heuristic guidance from set history — see “How suggestions work” in docs/METHOD.md for the reasoning
+        and its limits.{' '}
         {rpe
           ? 'RPE data detected: rising effort at a fixed load nudges toward holding.'
           : 'No RPE logged in your export, so RPE-based autoregulation is skipped.'}
