@@ -46,9 +46,11 @@ strong_workouts.csv ?raw
   `parseWorkouts`. Dates arrive as `"YYYY-MM-DD HH:MM:SS"` (local). Sets are keyed by
   `dateKey` (YYYY-MM-DD).
 - **`src/lib/metrics.ts`** — all aggregation, pure and unit-testable: `liftSessions`,
-  `liftPR`, `cumulativeSeries(rows)` and `big4Series(rows)` (each lift's / the summed
-  best-to-date heaviest set, only climbs — `cumulativeSeries` points also carry the reps and
-  date of the standing record), `liftSetSeries(rows, lift)` (a lift's history as the sets actually
+  `liftPR`, `sessionMaxSeries(rows)` (each lift's heaviest *working* set **per session** — the main
+  ProgressChart; can descend, and carries `isPR` / `focus` / all-time `records` so the fall stays
+  legible), `cumulativeSeries(rows)` and `big4Series(rows)` (each lift's / the summed
+  best-to-date heaviest set, only climbs — `cumulativeSeries` is now **`StatCards`-only**, no longer
+  plotted), `liftSetSeries(rows, lift)` (a lift's history as the sets actually
   performed, session by session — the shape the drill-down's set-block chart draws) and
   `liftGrowth(rows, lift, from?)` (that card's two rates: the record's kg/wk and weekly tonnage's %/wk,
   scoped to the visible span),
@@ -215,24 +217,42 @@ rep-normalization** — it made a heavy day and a light day comparable on one ax
 thing hiding it. Take e1RM away and any chart that still compares across rep ranges starts lying.
 Hence:
 
-- **The `'all'` chart plots best-to-date** (`cumulativeSeries`) — monotone by construction, every
-  point a weight really lifted. Its `detail` carries the reps of the standing record and the date it
-  was set, for the tooltip. **Accepted cost:** a best-to-date line *cannot descend*, so a deload or a
-  layoff reads as **flat, never as a fall**. That's why dots (`makePrDot`) mark **only** the sessions
-  where the record actually advanced — a flat stretch with no dots is the "nothing new here" signal.
-  Don't dot every point; it would imply a PR every session.
+- **The `'all'` chart plots each session's own heaviest working set** (`sessionMaxSeries`) — every
+  point a weight lifted *that day*. **It therefore zigzags, by design.** This *replaced* a
+  best-to-date (monotone) line, and the swap was deliberate: a line that cannot descend renders a
+  deload or a light block as **flat**, so the chart went dead for weeks at a time (bench sat at
+  67.5 kg through a month of real training). **Accepted cost, eyes open:** the top of the line is no
+  longer guaranteed to be your record, and a planned light day (Jul 10 bench: 50 kg × 11) is a
+  17.5 kg cliff drawn exactly like an injury would be. **Do not "fix" this back to a monotone
+  series** — `cumulativeSeries` still exists, but only `StatCards` uses it now.
+- Three things exist *solely* to stop that cliff reading as a regression; none is decoration:
+  **`isPR`** (a running max over the **full history**, decided in `metrics.ts`) drives the dots —
+  the old rule compared a point with its *predecessor*, which equals "beats the record" only on a
+  monotone line; here it would dot every rebound (60 → 50 → 60 sets no record). **`focus`** (from
+  `dayFocusMap`, never re-derived) heads the tooltip — "Light day" is the *answer* to the cliff, and
+  this card is the only place it's given. **`records`** feeds the legend chips — they must show the
+  all-time PR, **not the last point**, or a light day prints "BP 50" and reads as "my bench is
+  50 kg". A footnote states the hazard in words.
+- **Warmups are excluded** — the series is built on `topWorkingSets` (the same per-day top set the
+  DUP engine progresses off, so the chart plots the number the engine reasons about).
+  `liftSessions.maxWeight` counts warmups, which was harmless on a monotone line but **not** here:
+  two squat days (2026-06-04, 06-19) logged warmups *only*, and would plot as fake 50/60 kg dips.
+  They now emit no point and `connectNulls` bridges them.
 - **The drill-down doesn't compare across rep ranges at all** — it stops plotting *max weight* and
   plots the **sets themselves**. See below.
 
 `ProgressChart` still appends a dashed `${key}__p` projection per lift from `nextSessionSuggestion`
 (`projectedWeight`) to a synthetic future date; tooltips ignore any `__p` dataKey. `projValue`
-**suppresses the projection when it wouldn't beat the standing record** — on a monotone line a
-projected dip is meaningless.
+now draws that projection **whether it rises or falls**. It used to suppress any projection that
+wouldn't beat the record — necessary when the line couldn't descend, but it meant the suggestion was
+hidden nearly always, since under DUP the next session is usually *lighter* than the standing record.
+A projected light day is a real prediction and this axis can say so. **Don't reinstate the
+suppression.**
 
 ### Progress scope (`ProgressChart` ⊃ `LiftDetail`)
 
-`ProgressChart` owns a local **`Scope = 'all' | LiftKey`**. `'all'` is the best-to-date four-line
-chart; a `LiftKey` renders `LiftDetailView` (`LiftDetail.tsx`, **unwrapped**: no `ChartCard`, no
+`ProgressChart` owns a local **`Scope = 'all' | LiftKey`**. `'all'` is the per-session max-weight
+four-line chart; a `LiftKey` renders `LiftDetailView` (`LiftDetail.tsx`, **unwrapped**: no `ChartCard`, no
 selector of its own) in the same card. The two views are never needed at once, which is why they're
 one card and not two.
 

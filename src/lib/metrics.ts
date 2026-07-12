@@ -155,6 +155,74 @@ export function cumulativeSeries(rows: SetRow[]): BestToDatePoint[] {
   return series
 }
 
+// Each lift's heaviest *working* set on each training day — the weight actually lifted
+// that session, not a record carried forward. Backs the main ProgressChart.
+//
+// This series can descend, and that is the point: under DUP a light day is a planned
+// 17.5 kg cliff, not a regression. Three things keep that legible — `isPR` (so a rebound
+// off a light day isn't mistaken for a record), `focus` (so the tooltip can say *why* a
+// day is low), and `records` (so the legend can still state the standing PR, which the
+// line no longer guarantees to be its highest point).
+export interface SessionMaxPoint {
+  dateKey: string
+  ts: number
+  focus?: DayFocus // that day's rep character, from the one definition in dayFocusMap
+  BP?: number
+  SQ?: number
+  DL?: number
+  OHP?: number
+  detail: Partial<Record<LiftKey, { reps: number; isPR: boolean }>>
+}
+
+// Built on `topWorkingSets` — the same per-day top set the DUP engine progresses off, so
+// the chart plots the number the engine actually reasons about. That also brings the
+// warmup guard for free: `liftSessions.maxWeight` counts warmups (harmless on a monotone
+// line, not here — two squat days logged warmups only and would plot as fake dips).
+//
+// `isPR` is a running max over the FULL history, not a comparison with the previous point.
+// On a line that can descend those differ: 60 → 50 → 60 returns to the record without
+// setting one.
+export function sessionMaxSeries(
+  rows: SetRow[],
+  config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG,
+): { series: SessionMaxPoint[]; records: Record<LiftKey, number> } {
+  const byLiftDate = new Map<string, TopSet>()
+  const dates = new Set<string>()
+  for (const lift of LIFTS) {
+    for (const t of topWorkingSets(rows, lift.key)) {
+      byLiftDate.set(`${lift.key}|${t.dateKey}`, t)
+      dates.add(t.dateKey)
+    }
+  }
+
+  const focus = dayFocusMap(rows, config)
+  const records: Record<LiftKey, number> = { BP: 0, SQ: 0, DL: 0, OHP: 0 }
+  const series: SessionMaxPoint[] = []
+
+  for (const dateKey of [...dates].sort()) {
+    const point: SessionMaxPoint = {
+      dateKey,
+      ts: new Date(dateKey).getTime(),
+      focus: focus.get(dateKey),
+      detail: {},
+    }
+    for (const lift of LIFTS) {
+      const t = byLiftDate.get(`${lift.key}|${dateKey}`)
+      if (!t || t.load <= 0) continue
+      const isPR = t.load > records[lift.key]
+      if (isPR) records[lift.key] = t.load
+      point[lift.key] = round1(t.load)
+      point.detail[lift.key] = { reps: t.reps, isPR }
+    }
+    series.push(point)
+  }
+
+  return {
+    series,
+    records: { BP: round1(records.BP), SQ: round1(records.SQ), DL: round1(records.DL), OHP: round1(records.OHP) },
+  }
+}
+
 // ---- Weekly volume (ISO week) -------------------------------------------------
 
 // Returns [ISO year, ISO week, Monday date] for a given date.

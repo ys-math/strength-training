@@ -12,9 +12,10 @@ import {
 } from 'recharts'
 import { LIFT_BY_KEY, LIFTS, type LiftKey } from '../lib/types'
 import {
-  cumulativeSeries,
+  FOCUS_META,
   recommendedGoals,
-  type BestToDatePoint,
+  sessionMaxSeries,
+  type SessionMaxPoint,
   type Suggestion,
 } from '../lib/metrics'
 import { quarterCheckpoints } from '../lib/goals'
@@ -30,10 +31,10 @@ const tipClass = 'rounded-lg px-3 py-2 text-xs shadow-lg'
 const tipStyle = { background: 'var(--page)', border: '1px solid var(--border)', color: 'var(--text-primary)' }
 
 // One tooltip for the whole chart. On the synthetic projected column it lists each
-// lift's suggested next-session target; on a real date it shows each lift's standing
-// record and when it was set (the line is best-to-date, so a point often restates a
-// record from an earlier session). Projection series (dataKeys ending "__p") never
-// surface as their own rows.
+// lift's suggested next-session target; on a real date it shows what was lifted that
+// day, headed by the day's focus — "Light day" is what stops a planned 50 kg bench from
+// reading as a collapse, and it's the only place that answer appears on this card.
+// Projection series (dataKeys ending "__p") never surface as their own rows.
 function ProgressTooltip({
   active,
   payload,
@@ -73,23 +74,24 @@ function ProgressTooltip({
 
   const items = payload.filter((p) => p.value != null && !String(p.dataKey).endsWith('__p'))
   if (items.length === 0) return null
+  const focus = (row as unknown as SessionMaxPoint).focus
   return (
     <div className={tipClass} style={tipStyle}>
       <div className="mb-1 font-medium" style={{ color: 'var(--text-secondary)' }}>
-        {fmtLongDate(String(label))} <span style={{ color: 'var(--text-muted)' }}>· best to date</span>
+        {fmtLongDate(String(label))}
+        {/* FOCUS_META.label already carries the word "day" — Heavy day / Moderate day / Volume day. */}
+        {focus && <span style={{ color: 'var(--text-muted)' }}> · {FOCUS_META[focus].label}</span>}
       </div>
       {items.map((p) => {
         const key = p.dataKey as LiftKey
-        const d = (p.payload as BestToDatePoint).detail?.[key]
+        const d = (p.payload as SessionMaxPoint).detail?.[key]
         return (
           <div key={key} className="flex items-center gap-2 py-0.5">
             <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: p.color }} />
             <span style={{ color: 'var(--text-muted)' }}>{LIFT_BY_KEY.get(key)?.label ?? p.name}</span>
             <span className="ml-auto tabular-nums font-medium">
               {p.value} kg{d ? ` × ${d.reps}` : ''}
-              {d && d.setOn !== row.dateKey && (
-                <span style={{ color: 'var(--text-muted)' }}> · set {fmtDate(d.setOn)}</span>
-              )}
+              {d?.isPR && <span style={{ color: 'var(--text-muted)' }}> · PR</span>}
             </span>
           </div>
         )
@@ -140,22 +142,16 @@ function makeGoalLabel(color: string, text: string, dy: number) {
   }
 }
 
-// A dot only where the record actually *advanced*. The line is best-to-date, so most
-// points merely restate the standing record; dotting all of them would imply a PR every
-// session. A long flat stretch with no dots is then legible as "nothing new here" —
-// which is what this chart says instead of falling during a deload or a layoff.
-// `all` is the FULL history and `start` the slice offset, so a point's predecessor is
-// looked up in real history — not in the visible window, which would make the leftmost
-// bar of any zoomed span falsely read as a PR.
-function makePrDot(key: LiftKey, all: readonly unknown[], start: number, color: string) {
+// A dot only where the record actually *advanced*. The line now plots each session's own
+// top set, so it rises and falls; dotting every up-tick would call a rebound off a light
+// day a PR (60 → 50 → 60 sets no record). `isPR` is therefore a running max over the full
+// history, decided in `sessionMaxSeries`, not by comparing neighbouring points here.
+// `all` is the FULL history and `start` the slice offset, so a zoomed span still reads
+// the right row.
+function makePrDot(key: LiftKey, all: readonly SessionMaxPoint[], start: number, color: string) {
   return function PrDot(props: { cx?: number; cy?: number; index?: number }) {
     if (props.index == null || props.cx == null || props.cy == null) return null
-    const i = props.index + start
-    const at = (n: number) => (all[n] as Record<string, number | undefined> | undefined)?.[key]
-    const v = at(i)
-    if (v == null) return null
-    const prev = i > 0 ? at(i - 1) : undefined
-    if (prev != null && v <= prev) return null // no advance — not a PR
+    if (!all[props.index + start]?.detail?.[key]?.isPR) return null
     return <circle cx={props.cx} cy={props.cy} r={2.5} fill={color} />
   }
 }
@@ -199,12 +195,13 @@ export default function ProgressChart({
   rows: SetRow[]
   suggestions: Record<LiftKey, Suggestion>
 }) {
-  // Best-to-date, so the four-lift overview is monotone. The per-session heaviest set
-  // zigzags by design under DUP (a light day is a cliff, not a regression), which made
-  // the cross-lift comparison unreadable; the drill-down splits by rep range instead.
-  // The cost, accepted: a deload or layoff reads as *flat* here, never as a fall — which
-  // is why dots mark only the sessions where the record actually advanced.
-  const data = useMemo(() => cumulativeSeries(rows), [rows])
+  // Each session's own heaviest working set — every point a weight lifted *that day*.
+  // The line therefore zigzags under DUP, and that is the trade taken: best-to-date could
+  // never descend, so a deload or a light block read as flat and the chart went dead for
+  // weeks. The cost accepted in exchange is that the top of the line is no longer the
+  // record — hence `records` on the legend chips, `isPR` on the dots, and the focus label
+  // in the tooltip. Don't "fix" this back to a monotone series.
+  const { series: data, records } = useMemo(() => sessionMaxSeries(rows), [rows])
   const [hidden, setHidden] = useState<Set<LiftKey>>(new Set())
   const [showGoals, setShowGoals] = useState(true)
   const [startIdx, setStartIdx] = useState(0)
@@ -232,16 +229,12 @@ export default function ProgressChart({
     return map
   }, [data])
 
-  // The per-lift projected heaviest set — but only when it would *advance* the standing
-  // record. The line is best-to-date and therefore never descends; a projection below the
-  // current best (a deload, a light day, a hold) would draw a dip this chart can't mean.
-  const projValue = (key: LiftKey): number | null => {
-    const v = suggestions[key].projectedWeight
-    if (v == null) return null
-    const li = lastIndex[key]
-    const best = li != null ? (data[li] as unknown as Record<string, number | undefined>)[key] : undefined
-    return best != null && v <= best ? null : v
-  }
+  // The per-lift projected top set, drawn whether it rises or falls. It used to be
+  // suppressed unless it beat the standing record — necessary when the line couldn't
+  // descend, but it meant the suggestion was hidden most of the time, since under DUP the
+  // next session is usually *lighter* than the record. A projected light day is a real
+  // prediction and this axis can now say so.
+  const projValue = (key: LiftKey): number | null => suggestions[key].projectedWeight
 
   // Chart data with a synthetic future column: each lift's dashed `${key}__p` series
   // runs from its last real value to the projected next-session value.
@@ -344,7 +337,11 @@ export default function ProgressChart({
     <div className="flex flex-wrap justify-end gap-1.5">
       {LIFTS.map((lift) => {
         const off = hidden.has(lift.key)
-        const current = data[lastIndex[lift.key]]?.[lift.key]
+        // The all-time record, NOT the last point. On a best-to-date line those were the
+        // same number; on this one the last point is the last session's top set, so a
+        // light day would print "BP 50" and read as "my bench is 50 kg". With the record
+        // no longer drawn as a line, this chip is the only place the card states it.
+        const current = records[lift.key] > 0 ? records[lift.key] : undefined
         return (
           <button
             key={lift.key}
@@ -440,7 +437,7 @@ export default function ProgressChart({
   const title = detailLift ? `${detailLift.label} detail` : 'Max weight lifted'
   const subtitle = detailLift
     ? 'Every set performed — block height is the weight, so a column is the session’s volume'
-    : 'Best set to date, per lift — actual weight, never an estimate'
+    : 'Heaviest working set each session, per lift — actual weight, never an estimate'
 
   if (detailLift) {
     return (
@@ -501,7 +498,7 @@ export default function ProgressChart({
                   name={lift.label}
                   stroke={lift.color}
                   strokeWidth={2}
-                  dot={makePrDot(lift.key, chartData, start, lift.color) as never}
+                  dot={makePrDot(lift.key, data, start, lift.color) as never}
                   activeDot={{ r: 4, strokeWidth: 0 }}
                   connectNulls
                   isAnimationActive={false}
@@ -559,8 +556,15 @@ export default function ProgressChart({
         </div>
       )}
 
+      {/* The chart's one hazard, stated where it's read: under DUP the engine *plans* light
+          days, so a drop here is usually the program working, not lost strength. */}
+      <p className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+        Dips are planned light days, not lost strength — the program undulates heavy/moderate/light.
+        Dots = a session that set a new record.
+      </p>
+
       {(projected || goalsOn) && (
-        <p className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+        <p className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
           {projected && 'Dotted = projected next session if you hit the suggested goal (see Next session). '}
           {goalsOn &&
             `Dashed horizontal = 3-month goal (by ${goalDate.toLocaleDateString(undefined, {
