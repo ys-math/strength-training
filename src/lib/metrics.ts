@@ -370,6 +370,9 @@ export interface DayMetrics {
   volume: number
   /** The day's rep character, by the same rule the DUP engine uses (see dayFocusMap). */
   focus: DayFocus | null
+  /** The median working-set reps `focus` was classified from — the tooltip prints it so
+   *  the label can be checked against what you remember lifting. */
+  focusReps: number | null
 }
 
 export function dailyMetrics(rows: SetRow[], config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG): Map<string, DayMetrics> {
@@ -379,7 +382,7 @@ export function dailyMetrics(rows: SetRow[], config: SuggestionConfig = DEFAULT_
     if (!r.lift || r.isWarmup) continue
     const d = byDay.get(r.dateKey)
     if (d) d.sets += 1
-    else byDay.set(r.dateKey, { sets: 1, volume: 0, focus: null })
+    else byDay.set(r.dateKey, { sets: 1, volume: 0, focus: null, focusReps: null })
   }
 
   // Tonnage comes straight from sessionVolume rather than being re-summed here, so
@@ -389,9 +392,12 @@ export function dailyMetrics(rows: SetRow[], config: SuggestionConfig = DEFAULT_
     if (d) d.volume = s.total
   }
 
-  for (const [dateKey, focus] of dayFocusMap(rows, config)) {
+  for (const [dateKey, { focus, reps }] of dayFocusDetail(rows, config)) {
     const d = byDay.get(dateKey)
-    if (d) d.focus = focus
+    if (d) {
+      d.focus = focus
+      d.focusReps = reps
+    }
   }
 
   return byDay
@@ -719,6 +725,68 @@ function topWorkingSets(rows: SetRow[], lift: LiftKey): TopSet[] {
   return out
 }
 
+// The *working* set of each day, as distinct from the heaviest (`topWorkingSets` above).
+// The routine ends each lift with a single heavy top set (`heavyTopSet`, ~90% e1RM for
+// 2-3 reps), so on those days the heaviest set is the top set — and reading it answers
+// "what's my record", not "what did I train". Those are different questions:
+//
+//   2026-07-12 squat: 65x6, 65x6, 65x6, 70x3
+//     topWorkingSets → 70x3  (a real lift; the PR, the chart line, the goal rate)
+//     dayWorkingSets → 65x6  (what the session actually was; the focus, the progression)
+//
+// Reading the top set for the second question mislabelled a 6-rep day as `heavy`, and
+// (worse) hid the day from the engine's moderate stream entirely, since 3 reps fall
+// outside the 6-8 window.
+//
+// The load is picked *positively* — the weight carrying the most working sets, ties to
+// the heavier — rather than by discarding a set we guess was the top one. The CSV has no
+// top-set marker (`Set Order` is just 1,2,3,4), so shape is all we have, and "the load I
+// did the most sets at" is the one that survives contact with ramps and drop-off sets.
+// `bestE1rm` covers those sets only, which keeps the recommended top set anchored to what
+// the working sets prove instead of ratcheting off its own previous value.
+function dayWorkingSets(rows: SetRow[], lift: LiftKey): TopSet[] {
+  const byDate = new Map<string, SetRow[]>()
+  for (const r of rows) {
+    if (r.lift !== lift || r.isWarmup) continue
+    const list = byDate.get(r.dateKey)
+    if (list) list.push(r)
+    else byDate.set(r.dateKey, [r])
+  }
+
+  const out: TopSet[] = []
+  for (const [dateKey, sets] of byDate) {
+    const byLoad = new Map<number, SetRow[]>()
+    for (const s of sets) {
+      const list = byLoad.get(s.weight)
+      if (list) list.push(s)
+      else byLoad.set(s.weight, [s])
+    }
+
+    let load = 0
+    let count = 0
+    for (const [w, at] of byLoad) {
+      if (at.length > count || (at.length === count && w > load)) {
+        load = w
+        count = at.length
+      }
+    }
+
+    const working = byLoad.get(load) ?? []
+    const rpes = working.map((s) => s.rpe).filter((v): v is number => v != null)
+    out.push({
+      dateKey,
+      ts: sets[0].date.getTime(),
+      load,
+      reps: Math.max(...working.map((s) => s.reps)),
+      sets: working.length,
+      bestE1rm: Math.max(...working.map((s) => s.e1rm)),
+      rpe: rpes.length ? Math.max(...rpes) : null,
+    })
+  }
+  out.sort((a, b) => a.ts - b.ts)
+  return out
+}
+
 // e1RM flat or declining across the trailing `window` sessions (no net gain).
 function isStagnant(tops: TopSet[], window: number): boolean {
   if (tops.length < window) return false
@@ -883,23 +951,43 @@ export interface FocusPlan {
   from: DayFocus | null // the focus of your most recent training day (null with no history)
 }
 
+/** A day's rep character, plus the rep count it was decided from — so the label is
+ *  auditable (the heatmap tooltip prints `reps`, which is the whole of the evidence). */
+export interface DayFocusDetail {
+  focus: DayFocus
+  reps: number
+}
+
 // The rep character of *every* training day: the median of that day's per-lift
-// top-set reps, classified into a DUP window. This is the single definition of what
+// *working* set reps (dayWorkingSets, NOT topWorkingSets — a heavy top set is not what
+// the session was), classified into a DUP window. This is the single definition of what
 // makes a day heavy/moderate/light — both the next-session undulation below and the
 // heatmap's Intensity mode read it here, so the FocusBanner and the calendar can
 // never label the same day differently.
-export function dayFocusMap(rows: SetRow[], config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG): Map<string, DayFocus> {
+export function dayFocusDetail(
+  rows: SetRow[],
+  config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG,
+): Map<string, DayFocusDetail> {
   const repsByDay = new Map<string, number[]>()
   for (const lift of LIFTS) {
-    for (const t of topWorkingSets(rows, lift.key)) {
+    for (const t of dayWorkingSets(rows, lift.key)) {
       const list = repsByDay.get(t.dateKey)
       if (list) list.push(t.reps)
       else repsByDay.set(t.dateKey, [t.reps])
     }
   }
 
+  const out = new Map<string, DayFocusDetail>()
+  for (const [dateKey, reps] of repsByDay) {
+    const m = median(reps)
+    out.set(dateKey, { focus: classifyFocus(m, config), reps: m })
+  }
+  return out
+}
+
+export function dayFocusMap(rows: SetRow[], config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG): Map<string, DayFocus> {
   const out = new Map<string, DayFocus>()
-  for (const [dateKey, reps] of repsByDay) out.set(dateKey, classifyFocus(median(reps), config))
+  for (const [dateKey, d] of dayFocusDetail(rows, config)) out.set(dateKey, d.focus)
   return out
 }
 
@@ -1059,15 +1147,24 @@ function suggestForLift(
     }
   }
 
-  // `trueLast` is the actual most-recent session (drives detraining, which ignores
-  // focus); `stream` is the focus-scoped slice of history that progression tracks,
-  // so a heavy day and a light day each follow their own trend instead of blending.
+  // `trueLast` is the actual most-recent session, read off the *heaviest* set — the
+  // right lens for "how strong am I": it drives detraining (which ignores focus), the
+  // cold-start e1RM seed, and the goal-pace current best, and it must keep seeing a top
+  // set (a 70x3 squat is a real lift and a real record).
+  //
+  // `stream` is the focus-scoped slice of history that progression tracks, so a heavy
+  // day and a light day each follow their own trend instead of blending — and it reads
+  // the *working* sets, because the question there is "what did I train", not "what did
+  // I lift once". Filtering the heaviest set by rep window silently *dropped* every
+  // top-set day from its own stream (a 6-rep bench day enters as the 2-rep top set,
+  // which is outside the 6-8 moderate window), so the engine progressed moderate bench
+  // from the last session that happened to have no top set.
   const trueLast = tops[tops.length - 1]
   const truePrev: TopSetSummary = { load: trueLast.load, reps: trueLast.reps, sets: trueLast.sets }
   const [lo, hi] = config.dup.windows[focus]
   const inc = config.loadIncrement
   const sets = config.workingSets // baseline main-set count for progression/hold/return
-  const stream = tops.filter((t) => t.reps >= lo && t.reps <= hi)
+  const stream = dayWorkingSets(rows, lift).filter((t) => t.reps >= lo && t.reps <= hi)
 
   // Goal pace vs. the short-term max-weight target, if one is set. Goal fields are
   // spread onto every returned suggestion via `g`.

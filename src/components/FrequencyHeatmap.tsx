@@ -23,7 +23,7 @@ import HeatmapMetricToggle from './HeatmapMetricToggle'
 const SEQ = ['var(--seq-0)', 'var(--seq-1)', 'var(--seq-2)', 'var(--seq-3)', 'var(--seq-4)']
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-const EMPTY_DAY: DayMetrics = { sets: 0, volume: 0, focus: null }
+const EMPTY_DAY: DayMetrics = { sets: 0, volume: 0, focus: null, focusReps: null }
 
 // Focus labels for the legend. Deliberately the DayFocus keys, not FOCUS_META's labels
 // (whose `light` reads "Volume day") — a legend wants the scale's own vocabulary.
@@ -67,7 +67,7 @@ function HeatmapTooltip({ hover, session }: { hover: HoverInfo; session?: Sessio
   const left = Math.min(Math.max(idealLeft, 8 + HALF_WIDTH), window.innerWidth - 8 - HALF_WIDTH)
   const showBelow = hover.rect.top < 90
 
-  const { sets, volume, focus } = hover.day
+  const { sets, volume, focus, focusReps } = hover.day
   const activeExercises = session?.exercises.filter((e) => e.workingSets > 0) ?? []
 
   return (
@@ -89,7 +89,15 @@ function HeatmapTooltip({ hover, session }: { hover: HoverInfo; session?: Sessio
         {sets} working set{sets === 1 ? '' : 's'}
         {sets > 0 && ` · ${fmtTonnage(volume)}`}
       </div>
-      {focus && <div style={{ color: 'var(--text-secondary)' }}>{FOCUS_META[focus].label}</div>}
+      {/* The reps are the whole of the evidence behind the label — printing them makes it
+          auditable, so a day that disagrees with what you remember lifting is one glance
+          from being settled. */}
+      {focus && (
+        <div style={{ color: 'var(--text-secondary)' }}>
+          {FOCUS_META[focus].label}
+          {focusReps != null && ` · ${focusReps} reps at working load`}
+        </div>
+      )}
       {activeExercises.length > 0 && (
         <div className="mt-0.5" style={{ color: 'var(--text-muted)' }}>
           {activeExercises.map((e) => `${shortExerciseName(e.exercise)}×${e.workingSets}`).join(', ')}

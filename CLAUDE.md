@@ -146,9 +146,22 @@ Four things here are load-bearing:
   only the shade's meaning changes, which is what makes the heavy/light *distribution* visible at once.
   Don't pattern-match it to that revert and delete it.
 - **Intensity has exactly one definition, and it lives in `dayFocusMap`.** That function classifies
-  *every* training day (median of its per-lift top-set reps → `classifyFocus`), and `nextSessionFocus`
-  now calls it for its `from` value. So the heatmap and the Next-session `FocusBanner` cannot label the
-  same day differently. Never re-derive "heavy" locally in a component.
+  *every* training day (median of its per-lift **working**-set reps → `classifyFocus`), and
+  `nextSessionFocus` now calls it for its `from` value. So the heatmap and the Next-session
+  `FocusBanner` cannot label the same day differently. Never re-derive "heavy" locally in a component.
+  `dayFocusDetail` is the same map plus the deciding rep count, which the tooltip prints so the label
+  is auditable.
+- **It reads `dayWorkingSets`, *not* `topWorkingSets` — the distinction is load-bearing.** The routine
+  ends each lift with one heavy top set (~90 % e1RM, 2–3 reps), so the *heaviest* set of the day is the
+  top set. Reading it answers "what's my record"; it does **not** answer "what did I train". Asking the
+  wrong one labelled 2026-07-05 and 07-12 `heavy` when the working sets were 6 reps.
+  `dayWorkingSets` takes the **modal load** per lift per day — the weight carrying the most working
+  sets, ties to the heavier — and its max reps. The load is chosen *positively* ("the load I worked
+  at") rather than by discarding a set guessed to be the top one: the CSV has **no top-set marker**
+  (`Set Order` is just 1,2,3,4), so shape is all there is, and the modal load is what survives contact
+  with ramps and drop-off sets. Its `bestE1rm` covers those sets only, so the top set the engine
+  *recommends* stays anchored to what the working sets prove instead of ratcheting off its own previous
+  value. **Both functions must keep existing** — see the engine note below.
 - **Everything is scoped to the big four** (`if (!r.lift || r.isWarmup) continue`, the same guard as
   `sessionVolume`), and the tonnage is taken *from* `sessionVolume` rather than re-summed — so the
   heatmap's kg for a day equals the Session-volume card's kg for that day, exactly. `dailyActivity` used
@@ -355,12 +368,22 @@ to do and the history you already did are legible in the same visual grammar sid
 **Daily undulating periodization (DUP).** The engine is **always** DUP — one **global focus** per
 next session, `'heavy' | 'moderate' | 'light'` (rep windows `[3,5]/[6,8]/[9,12]` in
 `config.dup.windows`), chosen **automatically, no UI control**. `nextSessionFocus(rows)` classifies
-your most recent training day (median of that day's per-lift top-set reps) into a focus, then
+your most recent training day (median of that day's per-lift working-set reps) into a focus, then
 undulates one step along `config.dup.cycle` (`heavy → light → moderate`), returning `{ focus, from }`.
 `nextSessionSuggestion` computes it once and threads it into every lift; the optional `focus?` param is
 a **testability seam only** (Dashboard never passes it, so there's no control). Per lift, the focus
 swaps the working rep window and scopes progression to that focus's **`stream`** — the subset of
-`topWorkingSets` whose reps fall in the window — so heavy and light days each track their own trend.
+**`dayWorkingSets`** whose reps fall in the window — so heavy and light days each track their own trend.
+
+**`stream` reads `dayWorkingSets`; `trueLast` reads `topWorkingSets`. Don't collapse them.** They are
+two questions and the engine needs both. `stream` asks *what did I train*, so a heavy top set must not
+speak for the session: filtering `topWorkingSets` by rep window silently **dropped every top-set day
+from its own stream** (a 6-rep bench day enters as its 2-rep top set, outside the 6–8 moderate window),
+so the engine progressed moderate bench from the last session that happened to have no top set — and on
+the heavy side it read a 70×3 squat top set as if that were the working session. `trueLast` asks *how
+strong am I* and must keep seeing the top set: it drives detraining, the cold-start e1RM seed, and the
+goal-pace current best, and a 70×3 squat is a real lift and a real record.
+
 Cold start (empty stream): action **`'dup'`**, a load seeded from current e1RM via the Epley inverse
 at the window midpoint. Detraining still checks the *true* last session and overrides regardless of
 focus. `NextSession` shows a **`FocusBanner`** (label + rep window + "last session was X, undulating

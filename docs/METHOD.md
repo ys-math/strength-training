@@ -43,11 +43,19 @@ $(x)^+ = \max(x, 0)$.
    session to session** rather than sitting on one fixed window. Varying the rep/intensity
    stimulus this way is DUP; head-to-head trials vs. linear periodization are mixed (rule 8), so the
    app doesn't impose a canned template — it **infers** the next focus from *your own* history:
-   classify your most recent training day (the median of that day's per-lift top-set reps) and step
-   one slot along the cycle **heavy → light → moderate**. It's fully **automatic — no toggle** — and
-   applies **one focus to the whole next session** (matching whole-day undulation). Rule 1's double
+   classify your most recent training day (the median of that day's per-lift **working**-set reps) and
+   step one slot along the cycle **heavy → light → moderate**. It's fully **automatic — no toggle** —
+   and applies **one focus to the whole next session** (matching whole-day undulation). Rule 1's double
    progression then runs against only the slice of history whose reps fall in that focus's window, so
-   a heavy day and a light day each track their own trend. The first time a focus has no matching
+   a heavy day and a light day each track their own trend.
+
+   *Working sets, not the heaviest set.* Every session ends with a heavy top set (rule 3), which is by
+   construction the heaviest set of the day — so "the heaviest set" answers *how strong am I*, not
+   *what did I train*. A day of 3 × 57.5 kg × 6 plus a 62.5 kg × 2 top set is a **moderate** day, and
+   reading the top set would call it heavy and then hide it from the moderate slice entirely (2 reps
+   falls outside $[6,8]$). The day's character is therefore taken from its **modal load** — the weight
+   carrying the most working sets — since a Strong export marks warmups but not top sets. Records, the
+   e1RM seed and the layoff check still read the true heaviest set. The first time a focus has no matching
    history there's nothing to progress from, so the engine seeds a load from your current e1RM via the
    Epley inverse at the window's midpoint: $L = \big\lfloor E / (1 + r/30) \big\rceil_{\Delta}$. A layoff
    (rule 4) still overrides regardless of the focus.
