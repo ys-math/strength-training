@@ -9,42 +9,59 @@ import type { SetRow } from '../lib/types'
 const BODY_H = 480
 const Y_TICKS = 4 // → 5 gridlines counting zero
 
-// Tray and rep separators are drawn with `outline` and `inset box-shadow`, both of
-// which are zero-height chrome. That is the point: a column's pixel height stays
-// *exactly* `volume * pxPerKg`, instead of `volume + nSets * padding`. Inserting real
-// gaps would make a 5-set session render taller than a 3-set session of the same
-// volume, and the chart's whole claim is that height IS volume.
+// Both separators are `inset box-shadow` on the rep block itself — zero-height chrome. That
+// is the point: a column's pixel height stays *exactly* `volume * pxPerKg`, instead of
+// `volume + nSets * padding`. Inserting real gaps or padding would make a 5-set session
+// render taller than a 3-set session of the same volume, and the chart's whole claim is that
+// height IS volume.
 //
-// The two separators must not look alike, or the sets can't be counted — which is the
-// tray's whole job. So they're split by *colour*, not just by width: a set boundary is
-// the gray tray itself (`--surface-2`, the same gray as the rails down each side), and
-// a rep boundary is a translucent score line *within* the block. Gray = new set; score
-// = another rep. Don't unify them.
+// The two separators must not look alike, or the sets can't be counted. So they're split by
+// *colour*, not by width: a set boundary is a gray band (`--surface-2`), a rep boundary is a
+// translucent dark score line. Gray = new set; score = another rep. Don't unify them — a
+// heavier dark line for sets was tried, and the sets merged into the reps.
 const REP_GROUT = 'inset 0 1px 0 rgba(0, 0, 0, 0.3)'
+const SET_BAND = 'inset 0 3px 0 var(--surface-2)'
 
-// Blocks and trays are **square-cornered on purpose**. A block's height is the weight, and a
-// corner radius eats the ends of the very rectangle that encodes it — worst on a light load
-// at a squashed scale, where a block is only a few px tall.
+// A set was once a *tray*: a gray box framing the blocks, with 3px of horizontal padding and
+// an outline on all four sides. On a phone that was fatal. At full span a column is ~4px wide
+// (31 bench sessions into ~288px of plot, over half of it inter-column gap), so 6px of side
+// padding clamped the coloured block to **zero width** and the column rendered as a solid bar
+// of `--surface-2` — no blocks at all. The side rails were never load-bearing; only the
+// horizontal band is, and it costs no width. Gray still appears **only** at a set's edges,
+// so the rule above survives intact.
 //
-// The two separators have to differ in *kind*, or the sets can't be counted — which is the
-// tray's entire job. Because the blocks are square and butted, gray appears **only** at a
-// set's edges, never between reps: **gray = the tray around one set**, **a translucent dark
-// score line = the next rep**. Keep gray exclusive to set edges.
-function SetTray({ set, color, pxPerKg }: { set: LiftSetSession['sets'][number]; color: string; pxPerKg: number }) {
+// The band rides the *rep block*, not a parent: an inset box-shadow on a wrapper would be
+// painted under its opaque children (which is why the old code needed `outline` — outlines
+// paint over descendants). It goes on the set's topmost rep, and is skipped for the topmost
+// set, whose top edge is the end of the column rather than a boundary with anything.
+//
+// Blocks are **square-cornered on purpose**. A block's height is the weight, and a corner
+// radius eats the ends of the very rectangle that encodes it — worst on a light load at a
+// squashed scale, where a block is only a few px tall. It also leaks gray between every rep,
+// which destroys the one rule above.
+function SetTray({
+  set,
+  color,
+  pxPerKg,
+  band,
+}: {
+  set: LiftSetSession['sets'][number]
+  color: string
+  pxPerKg: number
+  band: boolean
+}) {
   const blockH = set.weight * pxPerKg
   return (
-    <div
-      className="w-full px-[3px]"
-      style={{
-        background: 'var(--surface-2)',
-        // Zero-height chrome: the tray band must not add pixels, or a 5-set session would
-        // out-measure a 3-set one of the same volume and "height IS volume" would be false.
-        outline: '3px solid var(--surface-2)',
-        outlineOffset: '-1px',
-      }}
-    >
+    <div className="w-full">
       {Array.from({ length: set.reps }, (_, i) => (
-        <div key={i} style={{ height: blockH, background: color, boxShadow: i > 0 ? REP_GROUT : undefined }} />
+        <div
+          key={i}
+          style={{
+            height: blockH,
+            background: color,
+            boxShadow: i > 0 ? REP_GROUT : band ? SET_BAND : undefined,
+          }}
+        />
       ))}
     </div>
   )
@@ -81,28 +98,41 @@ function GrowthStat({
 
 // One session. `flex-col-reverse` puts set 1 at the bottom, so the column builds up in
 // the order the sets were performed.
+//
+// Pointer handling is split by `pointerType` on purpose. The tooltip is the *only* place a
+// load is readable on this card (the axis is volume), and a phone has no hover — so a tap
+// pins a column. Reading pin and hover off one state would break iOS, which fires
+// `pointerenter` *before* `click` on a tap: the enter would open the tooltip and the click
+// would immediately toggle it shut again. Hence: mouse drives `hover`, taps drive `pinned`,
+// and a pin outranks a hover.
 function SessionColumn({
   session,
   color,
   pxPerKg,
-  hovered,
+  active,
   onHover,
+  onPin,
 }: {
   session: LiftSetSession
   color: string
   pxPerKg: number
-  hovered: boolean
+  active: boolean
   onHover: (dateKey: string | null) => void
+  onPin: (dateKey: string) => void
 }) {
+  const top = session.sets.length - 1
   return (
     <div
-      className="flex h-full min-w-0 flex-1 cursor-default flex-col-reverse justify-start transition-opacity"
-      style={{ opacity: hovered ? 1 : undefined }}
-      onMouseEnter={() => onHover(session.dateKey)}
-      onMouseLeave={() => onHover(null)}
+      className="flex h-full min-w-0 flex-1 flex-col-reverse justify-start transition-opacity"
+      style={{ opacity: active ? 1 : undefined }}
+      onPointerEnter={(e) => e.pointerType === 'mouse' && onHover(session.dateKey)}
+      onPointerLeave={(e) => e.pointerType === 'mouse' && onHover(null)}
+      onClick={() => onPin(session.dateKey)}
     >
       {session.sets.map((set, i) => (
-        <SetTray key={i} set={set} color={color} pxPerKg={pxPerKg} />
+        // The topmost set's top edge is the end of the column, not a boundary with a
+        // further set — so it wears no band.
+        <SetTray key={i} set={set} color={color} pxPerKg={pxPerKg} band={i !== top} />
       ))}
     </div>
   )
@@ -170,7 +200,7 @@ function SessionTooltip({
 
 // The single-lift drill-down of the Progress card: a set-block chart.
 //
-// One column per session, one gray tray per set, one coloured block per rep, each block
+// One column per session, one coloured block per rep, a gray band at each new set, each block
 // as tall as the set's weight — so a column's height IS that session's volume for this
 // lift, and weight / reps / sets / volume all read off one picture.
 //
@@ -182,9 +212,10 @@ function SessionTooltip({
 //   2. Weight and volume are anti-correlated under DUP, so the TALLEST column is usually
 //      the LIGHTEST session (Jul 8 bench: 60 kg, 900 kg volume — a short column; Jul 10:
 //      50 kg, 1700 kg — the tallest). Correct by definition.
-//   3. The domain is the lift's biggest session over FULL history, never the visible
-//      slice. Fitting it to the slice would resize every block as you drag the span
-//      slider — the same trap the volume card's baseline avoids.
+//   3. The domain is the biggest session ON SCREEN, so the tallest visible column always
+//      fills the plot — and dragging the span slider therefore rescales every block. A
+//      block's pixel height is only comparable *within* one view. `liftGrowth` is scoped to
+//      the same window for the same reason: the whole card describes the sessions you see.
 export default function LiftDetailView({ rows, lift: liftKey }: { rows: SetRow[]; lift: LiftKey }) {
   const lift = LIFT_BY_KEY.get(liftKey)!
 
@@ -193,6 +224,10 @@ export default function LiftDetailView({ rows, lift: liftKey }: { rows: SetRow[]
 
   const [startIdx, setStartIdx] = useState(0)
   const [hover, setHover] = useState<string | null>(null)
+  // A tap pins; a mouse hovers. A pin outranks a hover, so a pinned column stays open while
+  // the mouse wanders. See SessionColumn for why these can't be one state.
+  const [pinned, setPinned] = useState<string | null>(null)
+  const active = pinned ?? hover
 
   const maxStart = Math.max(0, data.length - 2)
   const start = Math.min(startIdx, maxStart)
@@ -287,17 +322,22 @@ export default function LiftDetailView({ rows, lift: liftKey }: { rows: SetRow[]
             />
           ))}
 
-          <div className="flex h-full items-end gap-[5px]">
+          {/* The gap is the plot's biggest single consumer of width on a phone: at 5px it ate
+              150px of a 288px plot (31 bench sessions), leaving 4.4px columns. It shrinks to
+              2px below `sm` so those pixels go to the blocks instead. It can't go to 0 —
+              adjacent columns share a colour and would fuse into one band. */}
+          <div className="flex h-full items-end gap-[2px] sm:gap-[5px]">
             {shown.map((session, i) => (
               <div key={session.dateKey} className="relative flex h-full min-w-0 flex-1 items-end">
                 <SessionColumn
                   session={session}
                   color={lift.color}
                   pxPerKg={pxPerKg}
-                  hovered={hover === session.dateKey}
+                  active={active === session.dateKey}
                   onHover={setHover}
+                  onPin={(k) => setPinned((p) => (p === k ? null : k))}
                 />
-                {hover === session.dateKey && (
+                {active === session.dateKey && (
                   <SessionTooltip
                     session={session}
                     color={lift.color}
@@ -315,7 +355,7 @@ export default function LiftDetailView({ rows, lift: liftKey }: { rows: SetRow[]
           than its column at narrow widths, so it is allowed to spill — its neighbours are
           blank by construction (`labelEvery`), which is what makes that safe. Truncating
           instead would print "6/…". */}
-      <div className="mt-1 flex gap-[5px] pl-11">
+      <div className="mt-1 flex gap-[2px] pl-11 sm:gap-[5px]">
         {shown.map((session, i) => (
           <span
             key={session.dateKey}
@@ -349,12 +389,12 @@ export default function LiftDetailView({ rows, lift: liftKey }: { rows: SetRow[]
       )}
 
       <p className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-        One column per session, one gray tray per set, one block per rep — each block as tall as the
-        weight lifted, so a column's height <em>is</em> that session's {lift.label} volume. Working sets
-        only; warmups are excluded, so a day's kg here matches the Session-volume card exactly. The axis
-        tops out at the biggest session <em>on screen</em>, and the two rates above cover the same span
-        — so dragging the slider rescales the blocks. Hover a column for the loads: the axis measures
-        volume, not weight, so a heavy session can be a short column.
+        One column per session, one block per rep, a gray band at each new set — each block as tall as
+        the weight lifted, so a column's height <em>is</em> that session's {lift.label} volume. Working
+        sets only; warmups are excluded, so a day's kg here matches the Session-volume card exactly. The
+        axis tops out at the biggest session <em>on screen</em>, and the two rates above cover the same
+        span — so dragging the slider rescales the blocks. Tap or hover a column for the loads: the axis
+        measures volume, not weight, so a heavy session can be a short column.
       </p>
     </>
   )
