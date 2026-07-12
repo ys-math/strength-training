@@ -142,17 +142,38 @@ function makeGoalLabel(color: string, text: string, dy: number) {
   }
 }
 
-// A dot only where the record actually *advanced*. The line now plots each session's own
-// top set, so it rises and falls; dotting every up-tick would call a rebound off a light
-// day a PR (60 → 50 → 60 sets no record). `isPR` is therefore a running max over the full
-// history, decided in `sessionMaxSeries`, not by comparing neighbouring points here.
-// `all` is the FULL history and `start` the slice offset, so a zoomed span still reads
-// the right row.
-function makePrDot(key: LiftKey, all: readonly SessionMaxPoint[], start: number, color: string) {
-  return function PrDot(props: { cx?: number; cy?: number; index?: number }) {
+// Two dots in one renderer, because they answer two different questions.
+//
+// The plain dot marks a session this lift was ACTUALLY trained. That is not decoration: the
+// x-axis has one slot per *training day* (any big-four day), so a lift not trained that day is
+// `undefined` and `connectNulls` bridges straight over it. Without dots, that bridge is drawn
+// identically to real data — and it is not a rare edge case: OHP is logged on 14 of 32 days, so
+// **over half** its line is interpolation. The dots are what separate the measured points from
+// the drawn-through ones.
+//
+// The haloed dot marks a session where the record actually *advanced*. The line plots each
+// session's own top set, so it rises and falls; dotting every up-tick would call a rebound off
+// a light day a PR (60 → 50 → 60 sets no record). `isPR` is therefore a running max over the
+// full history, decided in `sessionMaxSeries`, not by comparing neighbouring points here.
+//
+// The two must not be told apart by *fill alone* — at 4 lines × 32 points they'd blur together.
+// A PR is bigger AND carries a `--surface-1` ring that punches a gap out of the line behind it,
+// so it reads as an event rather than a slightly fatter dot.
+//
+// `all` is the FULL history and `start` the slice offset, so a zoomed span still reads the
+// right row.
+function makeSessionDot(key: LiftKey, all: readonly SessionMaxPoint[], start: number, color: string) {
+  return function SessionDot(props: { cx?: number; cy?: number; index?: number }) {
     if (props.index == null || props.cx == null || props.cy == null) return null
-    if (!all[props.index + start]?.detail?.[key]?.isPR) return null
-    return <circle cx={props.cx} cy={props.cy} r={2.5} fill={color} />
+    const d = all[props.index + start]?.detail?.[key]
+    // No entry = this lift wasn't trained that day; the line here is connectNulls' guess, and
+    // it must stay bare.
+    if (!d) return null
+    return d.isPR ? (
+      <circle cx={props.cx} cy={props.cy} r={4} fill={color} stroke="var(--surface-1)" strokeWidth={2} />
+    ) : (
+      <circle cx={props.cx} cy={props.cy} r={2} fill={color} />
+    )
   }
 }
 
@@ -498,7 +519,7 @@ export default function ProgressChart({
                   name={lift.label}
                   stroke={lift.color}
                   strokeWidth={2}
-                  dot={makePrDot(lift.key, data, start, lift.color) as never}
+                  dot={makeSessionDot(lift.key, data, start, lift.color) as never}
                   activeDot={{ r: 4, strokeWidth: 0 }}
                   connectNulls
                   isAnimationActive={false}
@@ -560,7 +581,8 @@ export default function ProgressChart({
           days, so a drop here is usually the program working, not lost strength. */}
       <p className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
         Dips are planned light days, not lost strength — the program undulates heavy/moderate/light.
-        Dots = a session that set a new record.
+        A dot = a session that lift was trained; a ringed dot = a new record. Between dots the line is
+        drawn through, not measured.
       </p>
 
       {(projected || goalsOn) && (

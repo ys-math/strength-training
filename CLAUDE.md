@@ -239,13 +239,21 @@ Hence:
   17.5 kg cliff drawn exactly like an injury would be. **Do not "fix" this back to a monotone
   series** — `cumulativeSeries` still exists, but only `StatCards` uses it now.
 - Three things exist *solely* to stop that cliff reading as a regression; none is decoration:
-  **`isPR`** (a running max over the **full history**, decided in `metrics.ts`) drives the dots —
-  the old rule compared a point with its *predecessor*, which equals "beats the record" only on a
-  monotone line; here it would dot every rebound (60 → 50 → 60 sets no record). **`focus`** (from
+  **`isPR`** (a running max over the **full history**, decided in `metrics.ts`) drives the *ringed*
+  dot — the old rule compared a point with its *predecessor*, which equals "beats the record" only on
+  a monotone line; here it would dot every rebound (60 → 50 → 60 sets no record). **`focus`** (from
   `dayFocusMap`, never re-derived) heads the tooltip — "Light day" is the *answer* to the cliff, and
   this card is the only place it's given. **`records`** feeds the legend chips — they must show the
   all-time PR, **not the last point**, or a light day prints "BP 50" and reads as "my bench is
   50 kg". A footnote states the hazard in words.
+- **`makeSessionDot` draws two dots, and the plain one is not decoration.** The x-axis has one slot
+  per *training day* (any big-four day), so a lift not trained that day is `undefined` and
+  `connectNulls` bridges straight over it — drawing interpolation identically to measured data. That
+  is not a rare edge: **OHP is logged on 14 of 32 days**, so over half its line is drawn-through. A
+  small `r=2` dot marks a session the lift was **actually trained**; bare line between dots = a guess.
+  A PR gets `r=4` plus a `--surface-1` ring that punches a gap in the line behind it. The two must
+  differ by **size + ring, not fill alone** — at 4 lines × 32 points a fill-only difference blurs.
+  Don't dot the null-bridged points "for consistency"; the gap *is* the information.
 - **Warmups are excluded** — the series is built on `topWorkingSets` (the same per-day top set the
   DUP engine progresses off, so the chart plots the number the engine reasons about).
   `liftSessions.maxWeight` counts warmups, which was harmless on a monotone line but **not** here:
@@ -270,10 +278,10 @@ selector of its own) in the same card. The two views are never needed at once, w
 one card and not two.
 
 **The drill-down is a set-block chart, and its y-axis is kg of *volume*, not kg of weight.** From
-`liftSetSeries`: one **column** per session, one gray **tray** per set, one **block** per rep, each
+`liftSetSeries`: one **column** per session, one **block** per rep, a gray **band** at each new set, each
 block as tall as that set's weight — so a column's height *is* that session's volume for the lift, and
 weight / reps / sets / volume all read off one picture. Plain divs, not Recharts (which can't nest
-per-rep blocks inside per-set trays); `FrequencyHeatmap` is the precedent. Above it, a headline shows
+per-rep blocks inside a session column); `FrequencyHeatmap` is the precedent. Above it, a headline shows
 the lift's all-time heaviest set, plus **two rates from `liftGrowth`** — see below.
 
 This replaced a three-line heavy/moderate/light rep-range stream chart (`liftStreamSeries` /
@@ -284,30 +292,49 @@ survive — the heatmap's Intensity mode, the DUP engine and `NextSession`'s `Fo
 them — but **nothing colors this card by focus**, and no surface answers per-rep-range progression
 any more. That is the accepted price of the trade below.
 
-Six things here are load-bearing:
+Seven things here are load-bearing:
 
 - **Height is volume, so weight is nearly invisible — that is the deliberate trade, not a bug.** At a
   480 px body, px/kg runs 0.15–0.21, so a 60 kg block and a 50 kg block differ by about **2 px**.
-  Weight is legible **only** in the PR headline and the hover tooltip (which therefore lists *every*
+  Weight is legible **only** in the PR headline and the tooltip (which therefore lists *every*
   set in full — it's the sole readout). Don't "fix" this with a weight axis, a shade ramp keyed to
   weight, a second panel, or focus hues. Volume was chosen for the axis with this cost on the table.
+  Because that tooltip is the only load readout, it must be reachable **without a hover**: a **tap
+  pins** a column (`pinned`), a mouse `hover`s, a pin outranks a hover, and the two are separate state
+  on purpose. Collapsing them breaks iOS, which fires `pointerenter` *before* `click` on a tap — the
+  enter opens the tooltip and the click would immediately toggle it shut. Hence the `pointerType ===
+  'mouse'` guard on the hover handlers.
 - **Weight and volume are anti-correlated under DUP, so the tallest column is usually the *lightest*
   session.** Jul 8 bench: 60 kg — the heaviest working load — and 900 kg, the *shortest* column. Jul
   10: 50 kg, and 1700 kg, the tallest. Correct by definition. A reader who expects "taller = stronger"
   will read this chart exactly backwards; the subtitle and footnote exist to prevent that.
-- **Tray and rep separators are zero-height chrome** (`outline` + `inset box-shadow`), never inserted
-  gaps or padding. If they took real height, a 5-set session would render taller than a 3-set session
-  of the same volume and the chart's one claim — height *is* volume — would quietly be false. (The
-  gaps *between sessions* are ordinary flex `gap` — horizontal, so they cost nothing.)
-- **Blocks and trays are square-cornered, and that is not a style choice.** A block's *height* is the
+- **Set and rep separators are zero-height chrome** — both are `inset box-shadow` on the rep block
+  itself, never inserted gaps or padding. If they took real height, a 5-set session would render taller
+  than a 3-set session of the same volume and the chart's one claim — height *is* volume — would
+  quietly be false. They ride the *block* and not a wrapper because a parent's inset shadow paints
+  **under** its opaque children; the old code needed `outline` for exactly that reason (outlines paint
+  over descendants). (The gaps *between sessions* are ordinary flex `gap` — horizontal, so they cost
+  nothing vertically.)
+- **Blocks are square-cornered, and that is not a style choice.** A block's *height* is the
   weight, and a corner radius eats the ends of the very rectangle that encodes it — worst on a light
-  load at a squashed scale, where a block is only a few px tall.
-- **The two separators differ in *kind*, not in width — otherwise the sets can't be counted**, which is
-  the tray's entire job. Because the blocks are square and butted, gray appears **only** at a set's
-  edges, never between reps: **gray (`--surface-2`) = the tray around one set**; **a translucent dark
-  score line = the next rep**. Two arrangements have already failed here: making both separators gray
+  load at a squashed scale, where a block is only a few px tall. It also leaks gray between every rep,
+  which breaks the rule below.
+- **The two separators differ in *kind*, not in width — otherwise the sets can't be counted.** Because
+  the blocks are square and butted, gray appears **only** at a set's
+  edges, never between reps: **gray (`--surface-2`, 3 px) = a new set**; **a translucent dark
+  score line (1 px) = the next rep**. Two arrangements have already failed here: making both separators gray
   (3 px vs 1 px) made the sets vanish into the reps, and *rounding the blocks* did the same, because
   gray then showed between every rep. Keep gray exclusive to set edges.
+- **The set separator is a band, not a *tray* — and it must never regrow side rails.** It used to be a
+  gray box framing the blocks: `px-[3px]` plus an `outline` on all four sides. On a phone that was
+  **fatal**. At full span a column is only ~7 px wide (31 bench sessions into ~288 px of plot), so 6 px
+  of horizontal padding clamped the coloured block to **zero width** and every column rendered as a
+  solid bar of `--surface-2` — no blocks at all, on the device the dashboard is most often read from.
+  The rails were never load-bearing; only the horizontal band is, and a band costs no width. Anything
+  that spends *horizontal* pixels on chrome here is a bug in waiting. For the same reason the
+  inter-column gap is `gap-[2px] sm:gap-[5px]`: at a flat 5 px it ate 150 px of that 288 px plot. It
+  can't go to 0 — adjacent columns share a colour and would fuse into one band. **Keep the x-label
+  row's gap in lockstep**, or the dates stop lining up with their columns.
 - **The y-domain is the biggest session *on screen*** — `Math.max(...shown)`, not the full history. So
   the tallest visible column always fills the plot. **Consequence, accepted:** dragging the span slider
   rescales every block, so a block's pixel height is only comparable *within* one view. `liftGrowth` is

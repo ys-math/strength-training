@@ -32,19 +32,24 @@ Three themes (dark, light, cozy); your choice is remembered.
 The rest of the page is what it looks like. These two aren't, and both misread in a specific
 direction — worth 30 seconds:
 
-**The `All` chart plots your best *to date*, so it can never fall.** A deload or a layoff shows up as
-a **flat line, not a dip** — the record didn't drop, you just didn't beat it. That's why dots mark
-only the sessions where the record actually advanced: a flat stretch with no dots is the "nothing new
-here" signal. To see a lift actually go down, drill into it.
+**The `All` chart plots each session's own heaviest set, so it zigzags — and the dips are the plan
+working.** The program **undulates** (heavy, then light, then moderate), so a light day is a real
+20 kg drop drawn exactly as an injury would be. It isn't a regression; it's Tuesday. The chart says so
+in three ways: the tooltip names the day *"Light day"*, the legend chips show your **all-time record**
+rather than the last point, and a **ringed dot** marks the sessions where the record actually
+advanced. A plain dot is just a session you trained that lift. **Where there's no dot, the line is
+drawn through, not measured** — each lift is trained on its own days, so between its dots the line is
+only connecting them. Overhead press is logged on 14 of 32 days, so over half that line is a
+join-the-dots.
 
-**In the per-lift view, the vertical axis is *volume*, not weight.** One column per session, one tray
-per set, one block per rep, each block as tall as the weight lifted — so a column's height *is* that
-session's tonnage, and weight, reps, sets and volume all read off one picture. The catch: the plan
-**undulates**, and light days carry the most volume, so **the tallest column is usually your
-*lightest* session.** In my own data a 60 kg bench day is the shortest column on the card and a 50 kg
-one is the tallest. That's correct, not a glitch — this chart answers *"how much work was that?"*,
-and the `All` chart answers *"how strong am I?"*. Read the actual loads from the tooltip, not from
-the block heights.
+**In the per-lift view, the vertical axis is *volume*, not weight.** One column per session, one block
+per rep, a gray band at each new set, each block as tall as the weight lifted — so a column's height
+*is* that session's tonnage, and weight, reps, sets and volume all read off one picture. The catch:
+light days carry the most volume, so **the tallest column is usually your *lightest* session.** In my
+own data a 60 kg bench day is the shortest column on the card and a 50 kg one is the tallest. That's
+correct, not a glitch — this chart answers *"how much work was that?"*, and the `All` chart answers
+*"how strong am I?"*. Read the actual loads by tapping or hovering a column, not from the block
+heights.
 
 ## How it decides what to lift
 
