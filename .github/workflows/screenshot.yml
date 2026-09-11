@@ -1,0 +1,51 @@
+name: Refresh README screenshot
+
+# The dashboard's data is baked in at build time, so docs/dashboard.png goes stale the
+# moment a new export lands. This redraws it from the freshly built site and commits the
+# result — but only when the CSV itself changed, so ordinary code pushes don't pay for a
+# browser download.
+on:
+  push:
+    branches: [main]
+    paths: ['strong_workouts.csv']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One at a time. Two exports landing together would otherwise race on the push.
+concurrency:
+  group: screenshot
+  cancel-in-progress: false
+
+jobs:
+  screenshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run screenshot
+
+      # Commit only a real change: `git diff --quiet` keeps a re-run that produced an
+      # identical image from making an empty commit, the same rule scripts/sync-data.sh
+      # follows. `[skip ci]` stops this commit from starting a second Pages deploy —
+      # the CSV push that triggered us is already deploying.
+      - name: Commit the refreshed screenshot
+        run: |
+          if git diff --quiet -- docs/dashboard.png; then
+            echo "Screenshot unchanged — nothing to commit."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/dashboard.png
+          git commit -m "Refresh README screenshot for the latest export [skip ci]"
+          # main may have moved while the browser was running; rebase and retry once.
+          git push || (git pull --rebase --autostash && git push)

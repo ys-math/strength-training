@@ -88,6 +88,12 @@ committing, so it never makes an empty commit.
 
 </details>
 
+The screenshot above keeps itself current: pushing a changed `strong_workouts.csv` runs
+[a workflow](.github/workflows/screenshot.yml) that rebuilds the site, redraws
+`docs/dashboard.png` from it, and commits the image only if it actually changed. Nothing to do by
+hand — but `npm run screenshot` redraws it locally if you want to, and takes `--theme`, `--width`
+and `--out`.
+
 ## Development
 
 ```bash
@@ -96,6 +102,7 @@ npm run dev      # http://localhost:5173/strength-training/
 npm run build    # production build → dist/  (also the type-check gate)
 npm run preview  # serve the production build
 npm run test     # Vitest — the engine, plus a golden test over a frozen CSV
+npm run screenshot  # redraw docs/dashboard.png from dist/ (build first)
 ```
 
 `npm run build` is the type-check gate; there is no lint script.

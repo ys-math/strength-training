@@ -18,6 +18,7 @@ npm run dev      # dev server at http://localhost:5173/strength-training/
 npm run build    # tsc -b && vite build → dist/  (run this to type-check)
 npm run preview  # serve the production build at :4173
 npm run test     # vitest run
+npm run screenshot  # redraw docs/dashboard.png from dist/ (needs a build first)
 ```
 
 `npm run build` is the type-check gate. There is no lint script. Test files live under `src`, so
@@ -319,6 +320,33 @@ Its `STORAGE_KEY` string and theme-id list are duplicated there and **must stay 
 
 Push to `main` → `.github/workflows/deploy.yml` runs `npm ci && npm run build` and deploys `dist/`
 to GitHub Pages. The Vite `base` is `/strength-training/` — it must match the repo name.
+
+## The README screenshot
+
+`docs/dashboard.png` is the image in `README.md`. The data is baked in at build time, so it goes
+stale the moment a new export lands. `.github/workflows/screenshot.yml` redraws it: it triggers on
+a push to `main` **filtered to `strong_workouts.csv`**, builds, runs `scripts/screenshot.mjs`, and
+commits the PNG.
+
+Four things there are deliberate:
+
+- **It runs in CI, not in `scripts/sync-data.sh`.** That script's one job is getting the data in,
+  and it runs unattended under launchd; a headless browser failing there would break the data sync
+  itself. CI isolates that risk and needs no browser installed on the Mac.
+- **The path filter is what keeps it cheap.** Without it every code push would download a
+  Chromium. Don't widen the trigger to all of `main`.
+- **The commit carries `[skip ci]`**, so it doesn't start a second Pages deploy — the CSV push
+  that triggered the run is already deploying. It also commits only when `git diff --quiet` says
+  the image really changed, the same no-empty-commit rule `sync-data.sh` follows.
+- **`screenshot.mjs` refuses to write a bad image.** It fails, non-zero and with nothing written,
+  if `dist/` is missing, the app renders its empty state, no chart mounted, the theme didn't
+  apply, or the page logged an error. A silently blank screenshot would otherwise be committed
+  and nobody would notice.
+
+The script serves the production build via `vite preview` rather than the dev server, since that
+is the artifact that ships. It duplicates two constants — the Vite `base` and the theme storage
+key — which **must stay in sync** with `vite.config.ts` and `src/lib/theme.ts` (the same key
+`index.html`'s inline script already duplicates).
 
 ## Data update workflow (the user's normal loop)
 
