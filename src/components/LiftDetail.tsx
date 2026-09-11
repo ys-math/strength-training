@@ -213,7 +213,7 @@ function SessionTooltip({
 //      the LIGHTEST session (Jul 8 bench: 60 kg, 900 kg volume — a short column; Jul 10:
 //      50 kg, 1700 kg — the tallest). Correct by definition.
 //   3. The domain is the biggest session ON SCREEN, so the tallest visible column always
-//      fills the plot — and narrowing the header's date range therefore rescales every block. A
+//      fills the plot — and narrowing the date range therefore rescales every block. A
 //      block's pixel height is only comparable *within* one view. `liftGrowth` is scoped to
 //      the same window for the same reason: the whole card describes the sessions you see.
 export default function LiftDetailView({ rows, lift: liftKey }: { rows: SetRow[]; lift: LiftKey }) {
@@ -228,12 +228,12 @@ export default function LiftDetailView({ rows, lift: liftKey }: { rows: SetRow[]
   const [pinned, setPinned] = useState<string | null>(null)
   const active = pinned ?? hover
 
-  // `rows` arrives already sliced to the header's date range, so "on screen" and "in the
-  // data" are the same set here.
+  // `rows` arrives already sliced to the card's date range, so "on screen" and "in the data"
+  // are the same set here.
   const shown = data
 
   // The axis tops out at the biggest session ON SCREEN, so the tallest visible column
-  // always fills the plot. Consequence to know: narrowing the header's range past an
+  // always fills the plot. Consequence to know: narrowing the date range past an
   // outlier rescales every block, so a block's pixel height is only comparable *within*
   // one view. The growth stats above are scoped to the same window, so the whole card
   // describes the sessions you can actually see.

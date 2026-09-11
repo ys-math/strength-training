@@ -86,7 +86,7 @@ export default function VolumeCard({
   grain,
   setGrain,
 }: {
-  /** Already sliced to the header's date range. */
+  /** Already sliced to the date range. */
   rows: SetRow[]
   /** Full history. Only the trailing baseline reads it. */
   allRows: SetRow[]

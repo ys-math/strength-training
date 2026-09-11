@@ -39,12 +39,13 @@ strong_workouts.csv ?raw
   "Exercise Name" strings, short keys, and CSS-var colors. Everything filters off this.
 - **`src/lib/parse.ts`** — `parseWorkouts`. Dates arrive as `"YYYY-MM-DD HH:MM:SS"` (local);
   sets are keyed by `dateKey` (YYYY-MM-DD).
-- **`src/lib/engine.ts`** — the **entire** algorithm, readable top to bottom. See below.
+- **`src/lib/engine.ts`** — the **entire** algorithm, ~356 lines with its comments, readable top
+  to bottom. See below.
 - **`src/lib/metrics.ts`** — chart aggregation only, pure and unit-testable: `liftSessions`,
-  `liftPR`, `topSetSeries`, `cumulativeSeries`, `big4Series`, `weeklyVolume`, `sessionVolume`,
+  `liftPR`, `sessionMaxSeries`, `cumulativeSeries`, `big4Series`, `weeklyVolume`, `sessionVolume`,
   `dailyMetrics`, `liftSetSeries`, `liftGrowth`, `sessionDetails`, `overallStats`,
   `frequencyStats`, `quantileThresholds`, `volumeBucket`.
-- **`src/lib/dateRange.ts`** — the header's span control. `rowsInRange` is the only filter.
+- **`src/lib/dateRange.ts`** — the span control's data model. `rowsInRange` is the only filter.
 - **`src/components/`** — presentational; each takes `rows: SetRow[]` and derives via `useMemo`.
   `Dashboard.tsx` composes them.
 
@@ -186,7 +187,7 @@ height *is* that session's volume. Plain divs, not Recharts. Load-bearing:
   is a bug in waiting. Same reason the gap is `gap-[2px] sm:gap-[5px]`; it can't go to 0 or
   adjacent columns fuse. **Keep the x-label row's gap in lockstep.**
 - **The y-domain is the biggest session on screen**, so the tallest visible column always fills
-  the plot. Consequence: narrowing the header's range rescales every block, so a block's pixel
+  the plot. Consequence: narrowing the date range rescales every block, so a block's pixel
   height is only comparable within one view. `liftGrowth` is scoped to the same window.
 - **Warmups are excluded** (the same guard as `sessionVolume` and `dailyMetrics`) and `volume` is
   rounded the same way, so a column's kg equals that lift's segment of the Session-volume bar for
@@ -234,7 +235,7 @@ Three modes — **Sets / Volume / Band** — via `BandMetricToggle`, state in `u
 three read one map, `dailyMetrics(rows)` → `{ sets, volume, band }`.
 
 - **This is an *encoding* switch, not the filter that `33fa31b` removed.** That one *hid* days
-  that didn't match a focus. This one never adds or removes a cell — every training day is on the
+  that didn't match a band. This one never adds or removes a cell — every training day is on the
   grid in every mode, only the shade's meaning changes, which is what makes the distribution
   visible at once. Don't pattern-match it to that revert.
 - **Everything is scoped to the big four**, and the tonnage is taken *from* `sessionVolume`
@@ -312,7 +313,7 @@ Its `STORAGE_KEY` string and theme-id list are duplicated there and **must stay 
 - **New theme:** add it to `THEMES`, add a `[data-theme='…']` block in `index.css`, and update the
   theme-id list in the inline script in `index.html`.
 - **New chart:** wrap it in `ChartCard`, reuse `ChartTooltip`, add a `metrics.ts` function rather
-  than aggregating inside the component, and take `rows` already sliced by the header's range.
+  than aggregating inside the component, and take `rows` already sliced by the date range.
 
 ## Deployment
 

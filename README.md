@@ -23,11 +23,12 @@ what to lift next. Static site, no backend, free on GitHub Pages.
   unusually heavy?"*, against your trailing 6-session average).
 - **Training frequency** — a calendar heatmap, shaded by sets, tonnage, or the day's rep band.
 
-A **date range** under the top-set chart drives all four charts at once. It filters charts only: the next-session
-prescription, the all-time records and the heatmap's colour scale always read your full history, so
-narrowing the view can never change what you are told to lift.
+A **date range** sits under the headline chart and drives all four charts at once. It filters charts
+only: the next-session prescription, the all-time records and the heatmap's colour scale always read
+your full history, so narrowing the view can never change what you are told to lift.
 
-Three themes (dark, light, cozy); your choice is remembered.
+Three themes (dark, light, cozy); your choice is remembered. Series colours come from a validated
+palette and are checked with a colour-vision validator, per theme, before they ship.
 
 ## How it decides what to lift
 
@@ -39,7 +40,7 @@ is 2 reps at the straight-set load divided by 0.95, 0.90 or 0.85 depending on th
 There are no goals and no deload rule. A track you have not trained in weeks still gets its plate
 step, and the card shows you how old the reference is rather than adjusting behind your back.
 
-The whole algorithm is one file, [`src/lib/engine.ts`](src/lib/engine.ts), about 300 lines including
+The whole algorithm is one file, [`src/lib/engine.ts`](src/lib/engine.ts), around 350 lines including
 its comments. **[docs/METHOD.md](docs/METHOD.md)** is that file in prose, with a worked example.
 
 ## Use it with your own data
@@ -97,17 +98,23 @@ npm run preview  # serve the production build
 npm run test     # Vitest — the engine, plus a golden test over a frozen CSV
 ```
 
+`npm run build` is the type-check gate; there is no lint script.
+
 The whole app is a one-directional pipeline with no backend and no runtime fetch:
 
 ```
-                              ┌─▶  engine.ts   ──▶  what to lift next
-strong_workouts.csv ──?raw──▶ parse.ts ──▶ SetRow[]
-   the only data source       ├─▶  metrics.ts  ──▶  what you have done
-                              └────────────────────▶  components/
+strong_workouts.csv ──?raw──▶ parse.ts ──▶ SetRow[] ──┬──▶ engine.ts  ──▶ what to lift next
+   the only data source                               │
+                                                      └──▶ metrics.ts ──▶ what you have done
+                                                                              │
+                                                                              ▼
+                                                                         components/
 ```
 
-Everything is a pure function over `SetRow[]`, which is why the tests cover the engine without
-rendering anything. Architecture and conventions live in **[CLAUDE.md](CLAUDE.md)**.
+`engine.ts` answers one question and `metrics.ts` answers the other; neither imports the components,
+and everything in both is a pure function over `SetRow[]`. That is why the tests cover the whole
+algorithm without rendering anything. Architecture and conventions live in
+**[CLAUDE.md](CLAUDE.md)**.
 
 ## Stack
 

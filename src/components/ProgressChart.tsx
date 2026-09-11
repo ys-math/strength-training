@@ -194,7 +194,7 @@ export default function ProgressChart({
    *  next-session projection would be drawn beyond the window's own right edge. */
   showProjection: boolean
   /** The span control. It sits in this card but drives the volume and frequency cards too,
-   *  which is why it is owned by Dashboard rather than by local state here. */
+   *  which is why Dashboard owns the state rather than this component. */
   days: string[]
   range: DateRange
   setRange: (r: DateRange) => void
