@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { fmtLongDate } from '../lib/format'
 import { presetFrom, RANGE_PRESETS, type DateRange } from '../lib/dateRange'
 
@@ -23,6 +24,30 @@ export default function DateRangePicker({ days, range, setRange }: Props) {
   const fromIdx = Math.max(0, days.indexOf(range.from))
   const toIdx = range.to ? days.indexOf(range.to) : days.length - 1
   const end = toIdx < 0 ? days.length - 1 : toIdx
+
+  const trackRef = useRef<HTMLDivElement>(null)
+  // Where the pan started: the pointer's x and the window it grabbed. Held in a ref, not
+  // state, because it changes on every pointermove and must not re-render.
+  const panFrom = useRef<{ x: number; from: number; to: number } | null>(null)
+
+  const lastIdx = days.length - 1
+  const pct = (i: number) => (i / lastIdx) * 100
+
+  // Shift the whole window, keeping its width. Clamped to the ends rather than squashed:
+  // a pan must never silently change the span you chose, only where it sits.
+  //
+  // "Width" is in TRAINING DAYS, not calendar days, because that is what the handles index
+  // — a handle can only land on a day you actually trained. So a pan keeps the same number
+  // of sessions on screen while the calendar length breathes a little with how densely you
+  // were training back then. That is the consistent reading: the charts are drawn per
+  // session, so session count is what decides how much is on screen.
+  const panBy = (steps: number, base = { from: fromIdx, to: end }) => {
+    const shift = Math.max(-base.from, Math.min(lastIdx - base.to, steps))
+    if (shift === 0) return
+    setRange({ from: days[base.from + shift], to: days[base.to + shift] })
+  }
+
+  const canPan = end - fromIdx < lastIdx
 
   // Searched from the broadest end: when the history is shorter than a preset's window it
   // clamps to the first training day, so several presets resolve to the same range. "All"
@@ -57,7 +82,7 @@ export default function DateRangePicker({ days, range, setRange }: Props) {
       <div className="flex min-w-0 flex-1 items-center gap-3">
         {/* Both handles ride one track. Each clamps against the other so they can't
             cross, which would invert the range. */}
-        <div className="span-range min-w-0 flex-1">
+        <div ref={trackRef} className="span-range min-w-0 flex-1">
           <div
             aria-hidden
             className="pointer-events-none absolute top-1/2 h-1 w-full -translate-y-1/2 rounded-full"
@@ -68,8 +93,60 @@ export default function DateRangePicker({ days, range, setRange }: Props) {
             className="pointer-events-none absolute top-1/2 h-1 -translate-y-1/2 rounded-full"
             style={{
               background: 'var(--text-muted)',
-              left: `${(fromIdx / (days.length - 1)) * 100}%`,
-              width: `${((end - fromIdx) / (days.length - 1)) * 100}%`,
+              left: `${pct(fromIdx)}%`,
+              width: `${pct(end - fromIdx)}%`,
+            }}
+          />
+          {/* The grab area for panning: full track height so a narrow window is still
+              catchable, and rendered BEFORE the inputs so their thumbs stack on top and
+              keep winning the pointer at the window's own edges. */}
+          <div
+            role="button"
+            tabIndex={canPan ? 0 : -1}
+            aria-label="Pan the range, keeping its length"
+            aria-disabled={!canPan}
+            className="absolute inset-y-0 touch-none rounded-sm focus-visible:outline focus-visible:outline-2"
+            style={{
+              left: `${pct(fromIdx)}%`,
+              width: `${pct(end - fromIdx)}%`,
+              cursor: canPan ? 'grab' : 'default',
+              outlineColor: 'var(--text-muted)',
+            }}
+            onPointerDown={(e) => {
+              if (!canPan) return
+              e.currentTarget.setPointerCapture(e.pointerId)
+              e.currentTarget.style.cursor = 'grabbing'
+              panFrom.current = { x: e.clientX, from: fromIdx, to: end }
+            }}
+            onPointerMove={(e) => {
+              const base = panFrom.current
+              const track = trackRef.current
+              if (!base || !track) return
+              // Pixels per index off the live track width, so the pan tracks the pointer
+              // at any card width.
+              const perIndex = track.getBoundingClientRect().width / lastIdx
+              if (perIndex <= 0) return
+              panBy(Math.round((e.clientX - base.x) / perIndex), base)
+            }}
+            onPointerUp={(e) => {
+              panFrom.current = null
+              e.currentTarget.style.cursor = 'grab'
+            }}
+            onPointerCancel={(e) => {
+              panFrom.current = null
+              e.currentTarget.style.cursor = 'grab'
+            }}
+            onKeyDown={(e) => {
+              // The two handles already give full keyboard control of each end; this makes
+              // panning reachable without a pointer too.
+              const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0
+              if (step) {
+                e.preventDefault()
+                panBy(e.shiftKey ? step * 7 : step)
+              } else if (e.key === 'Home' || e.key === 'End') {
+                e.preventDefault()
+                panBy(e.key === 'Home' ? -lastIdx : lastIdx)
+              }
             }}
           />
           <input
