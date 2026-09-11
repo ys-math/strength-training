@@ -279,6 +279,15 @@ Its `STORAGE_KEY` string and theme-id list are duplicated there and **must stay 
   `--seq-*`, `--band-*`, ink/surface roles) and redefined per theme block. Use the `color` on a
   `LIFTS` entry or `BAND_COLOR`; never hardcode a hex in a component. **Never build a dual-axis
   chart.**
+- **Each theme takes the palette's own steps for its surface, never a darkened or lightened copy
+  of another theme's.** `modern-light` once carried hand-darkened versions of the dark steps and
+  failed the validator outright on all pairs: deadlift yellow against overhead-press green at
+  ΔE 2.4 under protanopia, and the two greens at ΔE 9.4 for normal vision, below the 15 floor.
+  Before changing any series color, run
+  `node <dataviz-skill>/scripts/validate_palette.js "<hex,...>" --mode light --pairs all` — the
+  chart draws all four lifts at once, so `--pairs all` is the right list, not the adjacent
+  default. Light-mode aqua and yellow sit under 3:1 contrast; the relief rule is satisfied by the
+  direct end-labels and the value-bearing legend, so don't remove either.
 - **Recharts marks must set `isAnimationActive={false}`.** Grow-in animation renders blank under
   throttled requestAnimationFrame (headless/screenshots, and a flash on load).
 - Text wears ink tokens (`--text-*`), not the series color; identity is carried by a color chip

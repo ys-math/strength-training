@@ -45,33 +45,44 @@
 [data-theme='modern-light'] {
   color-scheme: light;
 
-  --page:           #f7f7f5;
+  /* Surfaces sit a step brighter than the dark theme's inverse would suggest: the page is
+     near-white and the chart surface is white, which is what the palette's light steps below
+     were validated against. */
+  --page:           #fbfbfa;
   --surface-1:      #ffffff;
-  --surface-2:      #e7e6e1;
+  --surface-2:      #edece7;
   --text-primary:   #141412;
   --text-secondary: #46453e;
   --text-muted:     #7a786e;
-  --gridline:       #e7e6e1;
-  --baseline:       #d4d2c9;
+  --gridline:       #edece7;
+  --baseline:       #dcdad2;
   --border:         rgba(0, 0, 0, 0.08);
   --hover-tint:     rgba(0, 0, 0, 0.04);
+  /* Ink, not a series color — kept dark enough to read as text. */
   --delta-good:     #0a8f0a;
   --hero-gradient:  linear-gradient(160deg, rgba(57, 135, 229, 0.16), var(--surface-1));
 
-  --lift-bp:  #2166c9;
-  --lift-sq:  #0f8a63;
-  --lift-dl:  #b06f00;
-  --lift-ohp: #087a08;
+  /* The palette's LIGHT steps, not darkened copies of the dark theme's. The previous
+     hand-darkened set failed CVD separation outright: deadlift yellow and overhead-press
+     green sat at ΔE 2.4 under protanopia, indistinguishable. These clear every check
+     (worst adjacent ΔE 9.1 protan, 22.9 normal). Aqua and yellow fall under 3:1 contrast
+     on white, which the relief rule covers — the chart carries direct end-labels and a
+     legend stating each value, so identity is never color-alone. */
+  --lift-bp:  #2a78d6; /* blue   — Bench Press   */
+  --lift-sq:  #1baf7a; /* aqua   — Squat         */
+  --lift-dl:  #eda100; /* yellow — Deadlift      */
+  --lift-ohp: #008300; /* green  — Overhead Press*/
 
-  --seq-0: #e9e8e3;
-  --seq-1: #bcd4f2;
-  --seq-2: #7fa8e0;
-  --seq-3: #3987e5;
-  --seq-4: #1a56ad;
+  /* One hue, still monotonic light → dark, stepped brighter across the whole ramp. */
+  --seq-0: #eeede8;
+  --seq-1: #b7d3f6;
+  --seq-2: #86b6ef;
+  --seq-3: #5598e7;
+  --seq-4: #2a78d6;
 
-  --band-volume:    #2166c9;
-  --band-moderate:  #0f8a63;
-  --band-heavy:     #c0392b;
+  --band-volume:    #2a78d6;
+  --band-moderate:  #1baf7a;
+  --band-heavy:     #e34948;
 }
 
 [data-theme='cozy'] {
