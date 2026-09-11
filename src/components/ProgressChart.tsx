@@ -471,8 +471,9 @@ export default function ProgressChart({
 
       {spanControl}
       <p className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-        Span drives the Volume and Training-frequency cards too. It never changes what Next session
-        tells you to lift.
+        Drag a handle to resize the span, or the bar between them to slide it without changing its
+        length. Span drives the Volume and Training-frequency cards too. It never changes what Next
+        session tells you to lift.
       </p>
     </ChartCard>
   )

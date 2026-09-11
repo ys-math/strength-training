@@ -110,6 +110,16 @@ weeks, one lift's sessions) and so could never agree on a period. Dates are the 
 charts share. Don't re-add a per-card slider, and don't move the state into `ProgressChart` —
 the other two cards need it.
 
+The filled bar between the handles is a third control: **dragging it pans the window without
+resizing it**, clamped at both ends rather than squashed, so a pan can never silently change the
+span you picked. Its width is in **training days, not calendar days** — that is what the handles
+index, since a handle can only land on a day you trained — so a pan keeps the same number of
+sessions on screen while the calendar length breathes with how densely you trained back then. It
+is rendered *before* the two inputs so their thumbs stack above it and keep winning the pointer at
+the window's own edges, and it carries arrow-key / Home / End handlers so panning isn't
+mouse-only. There's a regression check worth repeating by hand if you touch it: the index width
+must be identical before and after a pan, including both clamps.
+
 It filters **charts only** (`rowsInRange` in `Dashboard`). These always read full history:
 
 - the engine, so narrowing the view can never change what you are told to lift;
