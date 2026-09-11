@@ -1,13 +1,13 @@
-import { HEATMAP_METRICS, type HeatmapMetric } from '../lib/heatmapMetric'
+import { BAND_METRICS, type BandMetric } from '../lib/bandMetric'
 
 // Segmented control choosing what the Training-frequency heatmap's shade encodes.
 // Sits in the card header; re-colors the grid without adding or removing any cell.
-export default function HeatmapMetricToggle({
+export default function BandMetricToggle({
   metric,
   setMetric,
 }: {
-  metric: HeatmapMetric
-  setMetric: (m: HeatmapMetric) => void
+  metric: BandMetric
+  setMetric: (m: BandMetric) => void
 }) {
   return (
     <div
@@ -16,7 +16,7 @@ export default function HeatmapMetricToggle({
       aria-label="Heatmap color metric"
       style={{ border: '1px solid var(--border)', background: 'var(--surface-1)' }}
     >
-      {HEATMAP_METRICS.map((m) => {
+      {BAND_METRICS.map((m) => {
         const on = m.id === metric
         return (
           <button

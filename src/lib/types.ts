@@ -30,24 +30,19 @@ export interface SetRow {
   isWarmup: boolean
   weight: number // kg
   reps: number
-  e1rm: number // estimated 1-rep max for this set (Epley)
-  rpe: number | null // Strong's optional RPE column; null when the export omits it
 }
 
 // One lift performed on one date (all its sets aggregated).
 export interface LiftSession {
   date: Date
   dateKey: string
-  bestE1rm: number
-  maxWeight: number // heaviest weight actually lifted this session (independent of e1RM)
+  maxWeight: number // heaviest weight actually lifted this session
   maxWeightReps: number // reps of that set
   volume: number // working tonnage (kg), warmups excluded
   workingSets: number
 }
 
 export interface LiftPR {
-  maxE1rm: number
-  maxE1rmDate: string
   maxWeight: number
   maxWeightReps: number
   maxWeightDate: string

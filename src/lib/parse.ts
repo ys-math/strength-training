@@ -1,11 +1,6 @@
 import Papa from 'papaparse'
 import { LIFT_BY_EXERCISE, type SetRow } from './types'
 
-export function epley(weight: number, reps: number): number {
-  if (weight <= 0 || reps <= 0) return 0
-  return weight * (1 + reps / 30)
-}
-
 interface RawRow {
   Date: string
   'Workout Name': string
@@ -13,7 +8,6 @@ interface RawRow {
   'Set Order': string
   Weight: string
   Reps: string
-  RPE?: string // present in Strong's header but usually blank
 }
 
 // Strong exports "2026-04-24 09:40:00" (local time, space-separated).
@@ -28,9 +22,9 @@ function dateKeyOf(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
-// Parse the raw CSV text into typed, cleaned set rows. Rows with unparseable
-// dates or non-positive weight AND reps (bodyweight/cardio) are kept only if
-// they carry load; e1rm is 0 for zero-load sets and never wins a max.
+// Parse the raw CSV text into typed, cleaned set rows. Rows with unparseable dates are
+// dropped. Every weight is kg, straight from the export, with no conversion and no
+// estimation anywhere in the pipeline.
 export function parseWorkouts(csv: string): SetRow[] {
   const { data } = Papa.parse<RawRow>(csv, {
     header: true,
@@ -49,9 +43,6 @@ export function parseWorkouts(csv: string): SetRow[] {
     const weight = Number(r.Weight) || 0
     const reps = Number(r.Reps) || 0
     const lift = LIFT_BY_EXERCISE.get(exercise)?.key ?? null
-    const rpeRaw = (r.RPE ?? '').trim()
-    const rpeNum = rpeRaw === '' ? NaN : Number(rpeRaw)
-    const rpe = Number.isFinite(rpeNum) && rpeNum > 0 ? rpeNum : null
 
     rows.push({
       date,
@@ -63,8 +54,6 @@ export function parseWorkouts(csv: string): SetRow[] {
       isWarmup,
       weight,
       reps,
-      e1rm: epley(weight, reps),
-      rpe,
     })
   }
 

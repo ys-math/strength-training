@@ -1,6 +1,11 @@
-import { LIFTS, LIFT_BY_KEY, type LiftKey, type LiftPR, type LiftSession, type SetRow } from './types'
-import type { GoalHorizon } from './goals'
-import { epley } from './parse'
+// Chart aggregation. Every function here is pure and takes SetRow[]; the algorithm that
+// decides what to lift next lives in engine.ts, not here.
+//
+// Units are kg throughout, straight from the export. Nothing on this dashboard is
+// estimated — there is no e1RM, no conversion, no projection beyond the one the engine
+// actually prescribes.
+import { LIFTS, type LiftKey, type LiftPR, type LiftSession, type SetRow } from './types'
+import { dayBandMap, liftDays, type RepBand } from './engine'
 
 export const round1 = (n: number) => Math.round(n * 10) / 10
 export const round0 = (n: number) => Math.round(n)
@@ -29,16 +34,11 @@ export function liftSessions(rows: SetRow[], lift: LiftKey): LiftSession[] {
 
   const sessions: LiftSession[] = []
   for (const [dateKey, sets] of byDate) {
-    let bestE1rm = 0
     let maxWeight = 0
     let maxWeightReps = 0
     let volume = 0
     let workingSets = 0
     for (const s of sets) {
-      // Tracked independently of e1RM: a lighter, higher-rep set can score a
-      // better Epley estimate than the session's true heaviest single, so
-      // these must not share one comparison.
-      if (s.e1rm > bestE1rm) bestE1rm = s.e1rm
       if (s.weight > maxWeight) {
         maxWeight = s.weight
         maxWeightReps = s.reps
@@ -48,7 +48,7 @@ export function liftSessions(rows: SetRow[], lift: LiftKey): LiftSession[] {
         workingSets += 1
       }
     }
-    sessions.push({ date: sets[0].date, dateKey, bestE1rm, maxWeight, maxWeightReps, volume, workingSets })
+    sessions.push({ date: sets[0].date, dateKey, maxWeight, maxWeightReps, volume, workingSets })
   }
 
   sessions.sort((a, b) => a.date.getTime() - b.date.getTime())
@@ -57,10 +57,8 @@ export function liftSessions(rows: SetRow[], lift: LiftKey): LiftSession[] {
 
 export function liftPR(sessions: LiftSession[]): LiftPR | null {
   if (sessions.length === 0) return null
-  let best = sessions[0]
   let heaviest = sessions[0]
   for (const s of sessions) {
-    if (s.bestE1rm > best.bestE1rm) best = s
     if (s.maxWeight > heaviest.maxWeight) heaviest = s
   }
   // What the record was immediately before it was broken, for a progress delta.
@@ -69,8 +67,6 @@ export function liftPR(sessions: LiftSession[]): LiftPR | null {
     if (s.date.getTime() < heaviest.date.getTime() && s.maxWeight > prevMaxWeight) prevMaxWeight = s.maxWeight
   }
   return {
-    maxE1rm: best.bestE1rm,
-    maxE1rmDate: best.dateKey,
     maxWeight: heaviest.maxWeight,
     maxWeightReps: heaviest.maxWeightReps,
     maxWeightDate: heaviest.dateKey,
@@ -155,18 +151,20 @@ export function cumulativeSeries(rows: SetRow[]): BestToDatePoint[] {
   return series
 }
 
-// Each lift's heaviest *working* set on each training day — the weight actually lifted
-// that session, not a record carried forward. Backs the main ProgressChart.
+// ---- Top-set trend (the main ProgressChart) ----------------------------------
+
+// Each lift's logged TOP SET per training day: the heaviest set above that day's straight
+// sets. One rep band (1-2) rather than whichever band the session ran, so the line
+// compares like with like instead of dropping 20 kg because the day was a volume day.
 //
-// This series can descend, and that is the point: under DUP a light day is a planned
-// 17.5 kg cliff, not a regression. Three things keep that legible — `isPR` (so a rebound
-// off a light day isn't mistaken for a record), `focus` (so the tooltip can say *why* a
-// day is low), and `records` (so the legend can still state the standing PR, which the
-// line no longer guarantees to be its highest point).
-export interface SessionMaxPoint {
+// It still moves with the band, because the top set is derived from the band's load and
+// the factors don't fully compensate (squat swings ~17.5 kg across bands). `band` heads
+// the tooltip so a dip reads as a band change, and `records` feeds the legend, which must
+// show the all-time PR — the line no longer guarantees its own highest point is one.
+export interface TopSetPoint {
   dateKey: string
   ts: number
-  focus?: DayFocus // that day's rep character, from the one definition in dayFocusMap
+  band?: RepBand
   BP?: number
   SQ?: number
   DL?: number
@@ -174,44 +172,31 @@ export interface SessionMaxPoint {
   detail: Partial<Record<LiftKey, { reps: number; isPR: boolean }>>
 }
 
-// Built on `topWorkingSets` — the same per-day top set the DUP engine progresses off, so
-// the chart plots the number the engine actually reasons about. That also brings the
-// warmup guard for free: `liftSessions.maxWeight` counts warmups (harmless on a monotone
-// line, not here — two squat days logged warmups only and would plot as fake dips).
-//
-// `isPR` is a running max over the FULL history, not a comparison with the previous point.
-// On a line that can descend those differ: 60 → 50 → 60 returns to the record without
-// setting one.
-export function sessionMaxSeries(
-  rows: SetRow[],
-  config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG,
-): { series: SessionMaxPoint[]; records: Record<LiftKey, number> } {
-  const byLiftDate = new Map<string, TopSet>()
+export function topSetSeries(rows: SetRow[]): { series: TopSetPoint[]; records: Record<LiftKey, number> } {
+  const byLiftDate = new Map<string, { weight: number; reps: number }>()
+  const bandByDate = new Map<string, RepBand>()
   const dates = new Set<string>()
+
   for (const lift of LIFTS) {
-    for (const t of topWorkingSets(rows, lift.key)) {
-      byLiftDate.set(`${lift.key}|${t.dateKey}`, t)
-      dates.add(t.dateKey)
+    for (const day of liftDays(rows, lift.key)) {
+      if (!day.topSet) continue
+      byLiftDate.set(`${lift.key}|${day.dateKey}`, day.topSet)
+      dates.add(day.dateKey)
     }
   }
+  for (const [dateKey, d] of dayBandMap(rows)) bandByDate.set(dateKey, d.band)
 
-  const focus = dayFocusMap(rows, config)
   const records: Record<LiftKey, number> = { BP: 0, SQ: 0, DL: 0, OHP: 0 }
-  const series: SessionMaxPoint[] = []
+  const series: TopSetPoint[] = []
 
   for (const dateKey of [...dates].sort()) {
-    const point: SessionMaxPoint = {
-      dateKey,
-      ts: new Date(dateKey).getTime(),
-      focus: focus.get(dateKey),
-      detail: {},
-    }
+    const point: TopSetPoint = { dateKey, ts: new Date(dateKey).getTime(), band: bandByDate.get(dateKey), detail: {} }
     for (const lift of LIFTS) {
       const t = byLiftDate.get(`${lift.key}|${dateKey}`)
-      if (!t || t.load <= 0) continue
-      const isPR = t.load > records[lift.key]
-      if (isPR) records[lift.key] = t.load
-      point[lift.key] = round1(t.load)
+      if (!t || t.weight <= 0) continue
+      const isPR = t.weight > records[lift.key]
+      if (isPR) records[lift.key] = t.weight
+      point[lift.key] = round1(t.weight)
       point.detail[lift.key] = { reps: t.reps, isPR }
     }
     series.push(point)
@@ -368,21 +353,21 @@ export function sessionVolume(rows: SetRow[]): SessionVolume[] {
 export interface DayMetrics {
   sets: number
   volume: number
-  /** The day's rep character, by the same rule the DUP engine uses (see dayFocusMap). */
-  focus: DayFocus | null
-  /** The median working-set reps `focus` was classified from — the tooltip prints it so
-   *  the label can be checked against what you remember lifting. */
-  focusReps: number | null
+  /** The day's rep band, by the one definition in engine.ts (dayBandMap). */
+  band: RepBand | null
+  /** The rep count `band` was decided from — the tooltip prints it so the label can be
+   *  checked against what you remember lifting. */
+  bandReps: number | null
 }
 
-export function dailyMetrics(rows: SetRow[], config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG): Map<string, DayMetrics> {
+export function dailyMetrics(rows: SetRow[]): Map<string, DayMetrics> {
   const byDay = new Map<string, DayMetrics>()
 
   for (const r of rows) {
     if (!r.lift || r.isWarmup) continue
     const d = byDay.get(r.dateKey)
     if (d) d.sets += 1
-    else byDay.set(r.dateKey, { sets: 1, volume: 0, focus: null, focusReps: null })
+    else byDay.set(r.dateKey, { sets: 1, volume: 0, band: null, bandReps: null })
   }
 
   // Tonnage comes straight from sessionVolume rather than being re-summed here, so
@@ -392,11 +377,11 @@ export function dailyMetrics(rows: SetRow[], config: SuggestionConfig = DEFAULT_
     if (d) d.volume = s.total
   }
 
-  for (const [dateKey, { focus, reps }] of dayFocusDetail(rows, config)) {
+  for (const [dateKey, { band, reps }] of dayBandMap(rows)) {
     const d = byDay.get(dateKey)
     if (d) {
-      d.focus = focus
-      d.focusReps = reps
+      d.band = band
+      d.bandReps = reps
     }
   }
 
@@ -411,30 +396,6 @@ export function quantileThresholds(values: number[]): number[] {
   const sorted = values.filter((v) => v > 0).sort((a, b) => a - b)
   if (sorted.length === 0) return [0, 0, 0]
   return [0.25, 0.5, 0.75].map((q) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))])
-}
-
-/** How your training days divide across the three intensity bands. */
-export interface FocusMix {
-  light: number
-  moderate: number
-  heavy: number
-  /** Days that carried a focus at all — the denominator for the proportion bar. */
-  total: number
-}
-
-// The distribution behind the heatmap's Intensity mode: the same per-day classification
-// (dayFocusMap → classifyFocus) the grid colors by and the DUP engine undulates on, just
-// counted. So the mix bar, the calendar, and the Next-session focus banner can never
-// disagree about what a day was. Days with no classifiable top set are skipped, so
-// `total` may be < the session count.
-export function focusMix(rows: SetRow[], config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG): FocusMix {
-  const mix: FocusMix = { light: 0, moderate: 0, heavy: 0, total: 0 }
-  for (const day of dailyMetrics(rows, config).values()) {
-    if (!day.focus) continue
-    mix[day.focus] += 1
-    mix.total += 1
-  }
-  return mix
 }
 
 // Bucket 0 is reserved for "no training". Any day with tonnage lands in 1..4, even
@@ -575,422 +536,6 @@ export function frequencyStats(rows: SetRow[]): FrequencyStats {
   return { avgSessionsPerWeek, mostActiveWeekday, sessionsThisWeek }
 }
 
-// ---- Next-session suggestion --------------------------------------------------
-//
-// A per-lift "what to do next" heuristic computed purely from set history. The
-// rules and the theory behind each are documented in docs/METHOD.md ("How
-// suggestions work"). All tunable thresholds live in DEFAULT_SUGGESTION_CONFIG — no magic
-// numbers scattered through the branching.
-
-// Daily undulating periodization (DUP): each session carries one of three
-// rep/intensity focuses. The engine infers the *next* session's focus from your
-// most recent training day and undulates one step along `cycle` (see
-// nextSessionFocus). The chosen focus swaps the working rep window and scopes
-// progression to that focus's slice of history.
-export type DayFocus = 'heavy' | 'moderate' | 'light'
-
-export interface SuggestionConfig {
-  loadIncrement: number // smallest plate jump, kg
-  stagnationWindow: number // sessions inspected for the e1RM plateau check
-  belowRangeRepeat: number // consecutive below-range sessions that trigger a deload
-  workingSets: number // baseline number of main working sets per session
-  deloadSetFactor: number // fraction of the baseline working sets kept on a deload
-  topSetIntensity: number // fraction of e1RM for the heavy specificity top set (Size Principle)
-  detraining: {
-    graceWeeks: number // gap tolerated before any strength loss is assumed
-    tauWeeks: number // detraining decay time-constant, weeks
-    minRetention: number // floor on the retention factor (don't back off more than this)
-  }
-  dup: {
-    windows: Record<DayFocus, [number, number]> // working-rep window per focus (inclusive)
-    cycle: DayFocus[] // order the focus undulates through, session to session
-  }
-}
-
-// Baseline routine shape: 2–3 warmup sets (see warmupRamp), 3 main working
-// sets, 1 heavy top set — trimmed on a deload or omitted where noted (see
-// docs/METHOD.md "How suggestions work").
-export const DEFAULT_SUGGESTION_CONFIG: SuggestionConfig = {
-  loadIncrement: 2.5,
-  stagnationWindow: 3,
-  belowRangeRepeat: 2,
-  workingSets: 3,
-  deloadSetFactor: 0.5,
-  topSetIntensity: 0.9,
-  detraining: { graceWeeks: 2, tauWeeks: 10, minRetention: 0.7 },
-  dup: {
-    // Windows fit to real logged training; cycle undulates for max session-to-session
-    // contrast (never heavy → heavy). See docs/METHOD.md "How suggestions work".
-    windows: { heavy: [3, 5], moderate: [6, 8], light: [9, 12] },
-    cycle: ['heavy', 'light', 'moderate'],
-  },
-}
-
-export type SuggestionAction =
-  | 'increase-load'
-  | 'add-rep'
-  | 'build-reps'
-  | 'deload'
-  | 'return'
-  | 'dup'
-  | 'insufficient-data'
-
-// How the lift's recent trajectory tracks against its short-term max-weight goal.
-export type GoalPace = 'met' | 'ahead' | 'on-track' | 'behind'
-
-export interface TopSetSummary {
-  load: number
-  reps: number
-  sets: number
-}
-
-export interface Suggestion {
-  lift: LiftKey
-  action: SuggestionAction
-  // Target prescription for the next session (0s when there's no history).
-  load: number
-  reps: number
-  sets: number
-  prev: TopSetSummary | null // last session's top working set
-  topSet: TopSetSummary | null // heavy low-rep specificity set to add (null on deload/return/no-data)
-  loadDelta: number // target − prev, kg (0 when prev is null)
-  repsDelta: number // target − prev reps
-  setsDelta: number // target − prev sets
-  projectedWeight: number | null // where the trend lands next session if the target is met (null only w/o history)
-  projectedE1rm: number | null // epley(target.load, target.reps) (flat for a hold/deload)
-  goalPace: GoalPace | null // vs. the short-term max-weight goal (null when no goal is set)
-  requiredPerWeek: number | null // kg/week still needed to hit that goal on time
-  rationale: string // one-line explanation
-}
-
-// Short-term goal context threaded into the suggestion engine.
-export interface GoalContext {
-  target: Partial<Record<LiftKey, number>> // per-lift short-term max-weight target, kg
-  weeksLeft: number // weeks until the short-term horizon
-}
-
-// True once any row carries an RPE value. Strong always emits the RPE *column*,
-// so header presence alone means nothing — we key off populated data.
-export function hasRpeData(rows: SetRow[]): boolean {
-  return rows.some((r) => r.rpe != null)
-}
-
-// The heaviest working set of each session for a lift, tie-broken by reps, with
-// the count of working sets sharing that top load, the session's best e1RM, and
-// the hardest RPE logged at that load (null when RPE isn't tracked).
-interface TopSet {
-  dateKey: string
-  ts: number
-  load: number
-  reps: number
-  sets: number
-  bestE1rm: number
-  rpe: number | null
-}
-
-function topWorkingSets(rows: SetRow[], lift: LiftKey): TopSet[] {
-  const byDate = new Map<string, SetRow[]>()
-  for (const r of rows) {
-    if (r.lift !== lift || r.isWarmup) continue
-    const list = byDate.get(r.dateKey)
-    if (list) list.push(r)
-    else byDate.set(r.dateKey, [r])
-  }
-
-  const out: TopSet[] = []
-  for (const [dateKey, sets] of byDate) {
-    let load = 0
-    let reps = 0
-    let bestE1rm = 0
-    for (const s of sets) {
-      if (s.e1rm > bestE1rm) bestE1rm = s.e1rm
-      if (s.weight > load || (s.weight === load && s.reps > reps)) {
-        load = s.weight
-        reps = s.reps
-      }
-    }
-    const atTop = sets.filter((s) => s.weight === load)
-    const rpes = atTop.map((s) => s.rpe).filter((v): v is number => v != null)
-    out.push({
-      dateKey,
-      ts: sets[0].date.getTime(),
-      load,
-      reps,
-      sets: atTop.length,
-      bestE1rm,
-      rpe: rpes.length ? Math.max(...rpes) : null,
-    })
-  }
-  out.sort((a, b) => a.ts - b.ts)
-  return out
-}
-
-// The *working* set of each day, as distinct from the heaviest (`topWorkingSets` above).
-// The routine ends each lift with a single heavy top set (`heavyTopSet`, ~90% e1RM for
-// 2-3 reps), so on those days the heaviest set is the top set — and reading it answers
-// "what's my record", not "what did I train". Those are different questions:
-//
-//   2026-07-12 squat: 65x6, 65x6, 65x6, 70x3
-//     topWorkingSets → 70x3  (a real lift; the PR, the chart line, the goal rate)
-//     dayWorkingSets → 65x6  (what the session actually was; the focus, the progression)
-//
-// Reading the top set for the second question mislabelled a 6-rep day as `heavy`, and
-// (worse) hid the day from the engine's moderate stream entirely, since 3 reps fall
-// outside the 6-8 window.
-//
-// The load is picked *positively* — the weight carrying the most working sets, ties to
-// the heavier — rather than by discarding a set we guess was the top one. The CSV has no
-// top-set marker (`Set Order` is just 1,2,3,4), so shape is all we have, and "the load I
-// did the most sets at" is the one that survives contact with ramps and drop-off sets.
-// `bestE1rm` covers those sets only, which keeps the recommended top set anchored to what
-// the working sets prove instead of ratcheting off its own previous value.
-function dayWorkingSets(rows: SetRow[], lift: LiftKey): TopSet[] {
-  const byDate = new Map<string, SetRow[]>()
-  for (const r of rows) {
-    if (r.lift !== lift || r.isWarmup) continue
-    const list = byDate.get(r.dateKey)
-    if (list) list.push(r)
-    else byDate.set(r.dateKey, [r])
-  }
-
-  const out: TopSet[] = []
-  for (const [dateKey, sets] of byDate) {
-    const byLoad = new Map<number, SetRow[]>()
-    for (const s of sets) {
-      const list = byLoad.get(s.weight)
-      if (list) list.push(s)
-      else byLoad.set(s.weight, [s])
-    }
-
-    let load = 0
-    let count = 0
-    for (const [w, at] of byLoad) {
-      if (at.length > count || (at.length === count && w > load)) {
-        load = w
-        count = at.length
-      }
-    }
-
-    const working = byLoad.get(load) ?? []
-    const rpes = working.map((s) => s.rpe).filter((v): v is number => v != null)
-    out.push({
-      dateKey,
-      ts: sets[0].date.getTime(),
-      load,
-      reps: Math.max(...working.map((s) => s.reps)),
-      sets: working.length,
-      bestE1rm: Math.max(...working.map((s) => s.e1rm)),
-      rpe: rpes.length ? Math.max(...rpes) : null,
-    })
-  }
-  out.sort((a, b) => a.ts - b.ts)
-  return out
-}
-
-// e1RM flat or declining across the trailing `window` sessions (no net gain).
-function isStagnant(tops: TopSet[], window: number): boolean {
-  if (tops.length < window) return false
-  const recent = tops.slice(-window)
-  return recent[recent.length - 1].bestE1rm <= recent[0].bestE1rm
-}
-
-// How many of the most recent sessions in a row landed below the rep range.
-function trailingBelowRange(tops: TopSet[], lo: number): number {
-  let n = 0
-  for (let i = tops.length - 1; i >= 0; i--) {
-    if (tops[i].reps < lo) n += 1
-    else break
-  }
-  return n
-}
-
-// RPE climbing at an unchanged top load & reps between the last two sessions.
-function rpeRisingAtConstant(tops: TopSet[]): boolean {
-  if (tops.length < 2) return false
-  const a = tops[tops.length - 2]
-  const b = tops[tops.length - 1]
-  if (a.rpe == null || b.rpe == null) return false
-  return b.load === a.load && b.reps === a.reps && b.rpe > a.rpe
-}
-
-const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s)
-
-// Assemble a Suggestion from a target prescription: fills deltas vs. `prev` and the
-// projected next-session weight & e1RM (where the trend lands if the target is met —
-// flat for a hold/deload, up for a progression).
-function buildSuggestion(
-  lift: LiftKey,
-  action: SuggestionAction,
-  target: TopSetSummary,
-  prev: TopSetSummary | null,
-  rationale: string,
-  topSet: TopSetSummary | null = null,
-): Suggestion {
-  return {
-    lift,
-    action,
-    load: target.load,
-    reps: target.reps,
-    sets: target.sets,
-    prev,
-    topSet,
-    loadDelta: prev ? round1(target.load - prev.load) : 0,
-    repsDelta: prev ? target.reps - prev.reps : 0,
-    setsDelta: prev ? target.sets - prev.sets : 0,
-    projectedWeight: target.load,
-    projectedE1rm: round1(epley(target.load, target.reps)),
-    goalPace: null,
-    requiredPerWeek: null,
-    rationale,
-  }
-}
-
-// ---- Theory-grounded helpers (see docs/METHOD.md "How suggestions work") -----
-
-// Reversibility / detraining: strength is retained for a short grace period, then
-// decays roughly exponentially with time off. Retention R(g) ∈ [minRetention, 1].
-export function retentionFactor(gapWeeks: number, cfg: SuggestionConfig['detraining']): number {
-  if (gapWeeks <= cfg.graceWeeks) return 1
-  return Math.max(cfg.minRetention, Math.exp(-(gapWeeks - cfg.graceWeeks) / cfg.tauWeeks))
-}
-
-// SAID / Size Principle / Rate coding: a heavy, low-rep top set at ~`intensity` of
-// current e1RM to recruit high-threshold motor units. Reps come from inverting Epley
-// (e1RM = load·(1+r/30) ⇒ r = 30·(1/intensity − 1)). Returns null when such a set
-// wouldn't be heavier than the working set (already specific enough).
-export function heavyTopSet(
-  bestE1rm: number,
-  workingLoad: number,
-  intensity: number,
-  plate: number,
-): TopSetSummary | null {
-  if (bestE1rm <= 0) return null
-  const load = Math.round((bestE1rm * intensity) / plate) * plate
-  if (load <= workingLoad) return null
-  const reps = Math.min(5, Math.max(1, Math.round(30 * (1 / intensity - 1))))
-  return { load, reps, sets: 1 }
-}
-
-// Latest logged session timestamp across all rows — the default "now" for detraining
-// so the engine stays pure/deterministic (the live dashboard passes Date.now()).
-export function latestTs(rows: SetRow[]): number {
-  let max = 0
-  for (const r of rows) {
-    const t = r.date.getTime()
-    if (t > max) max = t
-  }
-  return max
-}
-
-function deloadSuggestion(lift: LiftKey, last: TopSet, config: SuggestionConfig, why: string): Suggestion {
-  // Cut from what was *actually* done last time, not the idealized baseline —
-  // a deload is a deviation from your real recent volume, not a recomputed plan.
-  const sets = Math.max(1, Math.round(last.sets * config.deloadSetFactor))
-  const prev: TopSetSummary = { load: last.load, reps: last.reps, sets: last.sets }
-  return buildSuggestion(
-    lift,
-    'deload',
-    { load: last.load, reps: last.reps, sets },
-    prev,
-    `${cap(why)}; ease off for a session or two. Heuristic (e1RM trend), not a fatigue model.`,
-  )
-}
-
-// ---- DUP focus inference -----------------------------------------------------
-
-// UI-facing labels for a focus: a banner title and a one-word training intent.
-export const FOCUS_META: Record<DayFocus, { label: string; intent: string }> = {
-  heavy: { label: 'Heavy day', intent: 'strength' },
-  moderate: { label: 'Moderate day', intent: 'volume' },
-  light: { label: 'Volume day', intent: 'hypertrophy' },
-}
-
-// The one focus → color mapping, the twin of FOCUS_META: wherever a focus is drawn
-// (heatmap cell, Next-session banner chip) it wears this hue, so the two cards can't
-// disagree about what "heavy" looks like.
-//
-// Intensity is colored *categorically* — one hue per focus, cool → hot — not as steps of
-// the sequential ramp: at 13px, three shades of one blue don't separate, and a darker blue
-// says nothing about what "heavy" means. Red/green is a known color-vision collision
-// (moderate and heavy are the pair that merges under deuteranopia); on a single-reader
-// dashboard that cost was weighed and accepted. It's a choice, not an oversight — the
-// tooltip names the focus in words in every mode, which is the fallback.
-export const FOCUS_COLOR: Record<DayFocus, string> = {
-  heavy: 'var(--focus-heavy)',
-  moderate: 'var(--focus-moderate)',
-  light: 'var(--focus-light)',
-}
-
-// Heaviest → lightest. The order every focus-keyed list is rendered in.
-export const FOCUSES: DayFocus[] = ['heavy', 'moderate', 'light']
-
-// Classify a rep count into its focus by the configured window ceilings: at/below
-// the heavy window's top is heavy, at/below the moderate window's top is moderate,
-// otherwise light. Uses ceilings (not full ranges) so reps that fall between two
-// windows still classify into the lower one.
-export function classifyFocus(reps: number, config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG): DayFocus {
-  if (reps <= config.dup.windows.heavy[1]) return 'heavy'
-  if (reps <= config.dup.windows.moderate[1]) return 'moderate'
-  return 'light'
-}
-
-// The focus one step further along the undulation cycle.
-function advanceFocus(f: DayFocus, cycle: DayFocus[]): DayFocus {
-  const i = cycle.indexOf(f)
-  return cycle[(i + 1) % cycle.length]
-}
-
-function median(xs: number[]): number {
-  const s = [...xs].sort((a, b) => a - b)
-  const m = Math.floor(s.length / 2)
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
-}
-
-export interface FocusPlan {
-  focus: DayFocus // the inferred focus for the next session
-  from: DayFocus | null // the focus of your most recent training day (null with no history)
-}
-
-/** A day's rep character, plus the rep count it was decided from — so the label is
- *  auditable (the heatmap tooltip prints `reps`, which is the whole of the evidence). */
-export interface DayFocusDetail {
-  focus: DayFocus
-  reps: number
-}
-
-// The rep character of *every* training day: the median of that day's per-lift
-// *working* set reps (dayWorkingSets, NOT topWorkingSets — a heavy top set is not what
-// the session was), classified into a DUP window. This is the single definition of what
-// makes a day heavy/moderate/light — both the next-session undulation below and the
-// heatmap's Intensity mode read it here, so the FocusBanner and the calendar can
-// never label the same day differently.
-export function dayFocusDetail(
-  rows: SetRow[],
-  config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG,
-): Map<string, DayFocusDetail> {
-  const repsByDay = new Map<string, number[]>()
-  for (const lift of LIFTS) {
-    for (const t of dayWorkingSets(rows, lift.key)) {
-      const list = repsByDay.get(t.dateKey)
-      if (list) list.push(t.reps)
-      else repsByDay.set(t.dateKey, [t.reps])
-    }
-  }
-
-  const out = new Map<string, DayFocusDetail>()
-  for (const [dateKey, reps] of repsByDay) {
-    const m = median(reps)
-    out.set(dateKey, { focus: classifyFocus(m, config), reps: m })
-  }
-  return out
-}
-
-export function dayFocusMap(rows: SetRow[], config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG): Map<string, DayFocus> {
-  const out = new Map<string, DayFocus>()
-  for (const [dateKey, d] of dayFocusDetail(rows, config)) out.set(dateKey, d.focus)
-  return out
-}
-
 // ---- Per-set series (the per-lift drill-down) ---------------------------------
 
 export interface LiftSetSession {
@@ -1100,456 +645,4 @@ export function liftGrowth(rows: SetRow[], lift: LiftKey, from?: string): LiftGr
   }
 
   return { maxWeight: last, maxWeightPerWeek, weeklyVolume: weeklyVolumeMean, weeklyVolumePctPerWeek }
-}
-
-// Infer the next session's DUP focus: classify your most recent training day and
-// undulate one step along the cycle. Global — one focus for the whole next session —
-// matching whole-day undulation. Defaults to the first cycle entry when there's
-// nothing to classify.
-export function nextSessionFocus(rows: SetRow[], config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG): FocusPlan {
-  let latest = ''
-  for (const r of rows) {
-    if (r.lift && !r.isWarmup && r.dateKey > latest) latest = r.dateKey
-  }
-  const from = latest ? (dayFocusMap(rows, config).get(latest) ?? null) : null
-  if (!from) return { focus: config.dup.cycle[0], from: null }
-  return { focus: advanceFocus(from, config.dup.cycle), from }
-}
-
-function suggestForLift(
-  rows: SetRow[],
-  lift: LiftKey,
-  config: SuggestionConfig,
-  rpeAvailable: boolean,
-  now: number,
-  focus: DayFocus,
-  goalCtx?: GoalContext,
-): Suggestion {
-  const label = LIFT_BY_KEY.get(lift)?.label ?? lift
-  const tops = topWorkingSets(rows, lift)
-  if (tops.length === 0) {
-    return {
-      lift,
-      action: 'insufficient-data',
-      load: 0,
-      reps: 0,
-      sets: 0,
-      prev: null,
-      topSet: null,
-      loadDelta: 0,
-      repsDelta: 0,
-      setsDelta: 0,
-      projectedWeight: null,
-      projectedE1rm: null,
-      goalPace: null,
-      requiredPerWeek: null,
-      rationale: `No ${label} history in the data yet.`,
-    }
-  }
-
-  // `trueLast` is the actual most-recent session, read off the *heaviest* set — the
-  // right lens for "how strong am I": it drives detraining (which ignores focus), the
-  // cold-start e1RM seed, and the goal-pace current best, and it must keep seeing a top
-  // set (a 70x3 squat is a real lift and a real record).
-  //
-  // `stream` is the focus-scoped slice of history that progression tracks, so a heavy
-  // day and a light day each follow their own trend instead of blending — and it reads
-  // the *working* sets, because the question there is "what did I train", not "what did
-  // I lift once". Filtering the heaviest set by rep window silently *dropped* every
-  // top-set day from its own stream (a 6-rep bench day enters as the 2-rep top set,
-  // which is outside the 6-8 moderate window), so the engine progressed moderate bench
-  // from the last session that happened to have no top set.
-  const trueLast = tops[tops.length - 1]
-  const truePrev: TopSetSummary = { load: trueLast.load, reps: trueLast.reps, sets: trueLast.sets }
-  const [lo, hi] = config.dup.windows[focus]
-  const inc = config.loadIncrement
-  const sets = config.workingSets // baseline main-set count for progression/hold/return
-  const stream = dayWorkingSets(rows, lift).filter((t) => t.reps >= lo && t.reps <= hi)
-
-  // Goal pace vs. the short-term max-weight target, if one is set. Goal fields are
-  // spread onto every returned suggestion via `g`.
-  let pace: GoalPace | null = null
-  let requiredPerWeek: number | null = null
-  const target = goalCtx?.target[lift]
-  if (goalCtx && target != null && target > 0) {
-    const currentBest = Math.max(...tops.map((t) => t.load))
-    pace = goalPace(currentBest, target, goalCtx.weeksLeft, recentRatePerWeek(rows, lift))
-    requiredPerWeek = goalCtx.weeksLeft > 0 ? round1(Math.max(0, (target - currentBest) / goalCtx.weeksLeft)) : null
-  }
-  const g = { goalPace: pace, requiredPerWeek }
-
-  // 0. Reversibility / detraining — takes priority. After a layoff past the grace
-  // window, back the load off by the retention factor and ramp in, rather than
-  // pushing a PR on cold tissue. R(g) = exp(−(g−grace)/τ), floored at minRetention.
-  const gapWeeks = Math.max(0, (now - trueLast.ts) / (7 * 86400000))
-  if (gapWeeks > config.detraining.graceWeeks) {
-    const R = retentionFactor(gapWeeks, config.detraining)
-    const load = Math.max(inc, Math.round((trueLast.load * R) / inc) * inc)
-    const reps = Math.min(hi, Math.max(lo, trueLast.reps))
-    return {
-      ...buildSuggestion(
-        lift,
-        'return',
-        { load, reps, sets },
-        truePrev,
-        `~${Math.round(gapWeeks)} wk since your last ${label} — strength fades with time off ` +
-          `(reversibility). Ease back to ~${Math.round(R * 100)}% of your last load and rebuild.`,
-      ),
-      ...g,
-    }
-  }
-
-  // Cold start for this focus: no sets logged yet in its rep window. Seed a fresh
-  // prescription from current e1RM via the Epley inverse (load = e1RM/(1+r/30)) at
-  // the window's midpoint reps, rather than echoing a session at a different range.
-  if (stream.length === 0) {
-    const reps = Math.round((lo + hi) / 2)
-    const load = Math.max(inc, Math.round(trueLast.bestE1rm / (1 + reps / 30) / inc) * inc)
-    return {
-      ...buildSuggestion(
-        lift,
-        'dup',
-        { load, reps, sets },
-        truePrev,
-        `No ${FOCUS_META[focus].label.toLowerCase()} ${label} sets logged yet — starting from your current ` +
-          `e1RM (~${round1(trueLast.bestE1rm)}kg) at ${reps} reps (daily undulating periodization).`,
-        heavyTopSet(trueLast.bestE1rm, load, config.topSetIntensity, inc),
-      ),
-      ...g,
-    }
-  }
-
-  // Progression tracks the focus stream's own most-recent session.
-  const last = stream[stream.length - 1]
-  const prev: TopSetSummary = { load: last.load, reps: last.reps, sets: last.sets }
-  const stagnant = isStagnant(stream, config.stagnationWindow)
-
-  // The heavy specificity top set (SAID / Size Principle) attached to progression &
-  // hold suggestions — null on deload/return where the intent is to ease off. Surfaced
-  // as its own chip on the card, so it stays out of the working-set rationale text.
-  const topSet = heavyTopSet(last.bestE1rm, last.load, config.topSetIntensity, inc)
-
-  // 1. Double progression on the top working set — strongest signal.
-  if (last.reps >= hi) {
-    // 3. RPE (only if tracked): rising effort at the same load/reps → hold.
-    if (rpeAvailable && rpeRisingAtConstant(stream)) {
-      return {
-        ...buildSuggestion(
-          lift,
-          'add-rep',
-          { load: last.load, reps: last.reps, sets },
-          prev,
-          `Hit the top of the ${lo}–${hi} range, but RPE is rising at the same load — hold before adding weight.`,
-          topSet,
-        ),
-        ...g,
-      }
-    }
-    return {
-      ...buildSuggestion(
-        lift,
-        'increase-load',
-        { load: last.load + inc, reps: lo, sets },
-        prev,
-        `Hit ${sets}×${last.reps} @ ${last.load}kg last session (top of ${lo}–${hi} range).`,
-        topSet,
-      ),
-      ...g,
-    }
-  }
-
-  if (last.reps >= lo) {
-    // Within range: add a rep, unless e1RM has plateaued (2. deload).
-    if (stagnant) {
-      // Goal-aware refinement: if you're behind pace and only *mildly* stalled
-      // (still within range, not a hard below-range failure), push one more rep
-      // before easing off. Load jumps and hard deloads are never touched.
-      if (pace === 'behind') {
-        return {
-          ...buildSuggestion(
-            lift,
-            'add-rep',
-            { load: last.load, reps: last.reps + 1, sets },
-            prev,
-            `Behind your goal pace and only mildly stalled — push +1 rep before easing off.`,
-            topSet,
-          ),
-          ...g,
-        }
-      }
-      return {
-        ...deloadSuggestion(lift, last, config, `est. 1RM flat over the last ${config.stagnationWindow} sessions`),
-        ...g,
-      }
-    }
-    return {
-      ...buildSuggestion(
-        lift,
-        'add-rep',
-        { load: last.load, reps: last.reps + 1, sets },
-        prev,
-        `Reps within the ${lo}–${hi} range but not at the top yet.`,
-        topSet,
-      ),
-      ...g,
-    }
-  }
-
-  // Below range fallback. In practice unreachable — `stream` is scoped to reps in
-  // [lo, hi], so `last.reps >= lo` above always holds and returns. Kept as the
-  // required return and as a safety net if the stream definition ever widens.
-  const belowRepeated = trailingBelowRange(stream, lo) >= config.belowRangeRepeat
-  if (belowRepeated || stagnant) {
-    const why = belowRepeated
-      ? `stuck below ${lo} reps ${config.belowRangeRepeat}+ sessions running`
-      : `est. 1RM flat over the last ${config.stagnationWindow} sessions`
-    return { ...deloadSuggestion(lift, last, config, why), ...g }
-  }
-  return {
-    ...buildSuggestion(
-      lift,
-      'build-reps',
-      { load: last.load, reps: last.reps + 1, sets },
-      prev,
-      `Below the ${lo}–${hi} range — rebuild reps at this load before adding weight.`,
-      topSet,
-    ),
-    ...g,
-  }
-}
-
-// Per-lift next-session suggestion, computed purely from set history. Pass a
-// `goalCtx` to make it goal-aware (adds `goalPace`/`requiredPerWeek` and the
-// behind-pace refinement); omit it and behavior is unchanged.
-export function nextSessionSuggestion(
-  rows: SetRow[],
-  goalCtx?: GoalContext,
-  config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG,
-  now: number = latestTs(rows),
-  focus: DayFocus = nextSessionFocus(rows, config).focus,
-): Record<LiftKey, Suggestion> {
-  const rpeAvailable = hasRpeData(rows)
-  const result = {} as Record<LiftKey, Suggestion>
-  for (const lift of LIFTS) {
-    result[lift.key] = suggestForLift(rows, lift.key, config, rpeAvailable, now, focus, goalCtx)
-  }
-  return result
-}
-
-// ---- Session plan: the full ordered set list for the next session ------------
-
-export type PlanSetKind = 'warmup' | 'work' | 'top'
-
-// One prescribed set in the next-session plan.
-export interface PlanSet {
-  kind: PlanSetKind
-  weight: number
-  reps: number
-}
-
-// A progressive warmup ramp up to `workLoad`: an empty-bar set, then ~60 % and
-// ~85 % of the working load with descending reps — 2–3 sets as a baseline
-// (light loads collapse to 2 or fewer once a step would be redundant with the
-// bar or the working load). Weights snap to the plate increment and only sets
-// strictly lighter than the working load (and strictly increasing) are kept.
-// Returns an empty ramp for loads at or below the bar (nothing to ramp through).
-export function warmupRamp(workLoad: number, plate = 2.5, bar = 20): PlanSet[] {
-  if (!(workLoad > bar)) return []
-  const snap = (w: number) => Math.round(w / plate) * plate
-  const steps: Array<{ w: number; reps: number }> = [
-    { w: bar, reps: 5 },
-    { w: snap(0.6 * workLoad), reps: 3 },
-    { w: snap(0.85 * workLoad), reps: 2 },
-  ]
-  const ramp: PlanSet[] = []
-  let prev = 0
-  for (const st of steps) {
-    if (st.w > prev && st.w < workLoad) {
-      ramp.push({ kind: 'warmup', weight: st.w, reps: st.reps })
-      prev = st.w
-    }
-  }
-  return ramp
-}
-
-// The complete, ordered set list for a suggestion — warmup ramp → the working
-// sets → the heavy specificity top set. Baseline shape is 2–3 warmup sets, 3
-// working sets, 1 top set; a deload trims the working sets and drops the top
-// set, same as `return`. Empty when there's no history to prescribe from. Pure:
-// derived entirely from the Suggestion, so the card renders every set the
-// session calls for.
-export function sessionPlan(s: Suggestion, config: SuggestionConfig = DEFAULT_SUGGESTION_CONFIG): PlanSet[] {
-  if (s.action === 'insufficient-data' || s.sets <= 0) return []
-  const plan: PlanSet[] = warmupRamp(s.load, config.loadIncrement)
-  for (let i = 0; i < s.sets; i++) plan.push({ kind: 'work', weight: s.load, reps: s.reps })
-  if (s.topSet) {
-    for (let i = 0; i < s.topSet.sets; i++) plan.push({ kind: 'top', weight: s.topSet.load, reps: s.topSet.reps })
-  }
-  return plan
-}
-
-// ---- Goals: recommended targets, progress pace -------------------------------
-
-export interface GoalConfig {
-  quarterWeeks: number // weeks of runway credited per calendar quarter
-  decay: { mid: number; long: number } // decay on later periods' share of recent rate
-  floorPct: Record<GoalHorizon, number> // min cumulative gain as a fraction of current
-  capPct: Record<GoalHorizon, number> // max cumulative gain — diminishing-returns ceiling
-  minShortGain: number // never recommend less than this for the short-term (kg)
-  round: number // snap targets to this plate increment (kg)
-  neural: {
-    ageGraceWeeks: number // logged training age below which no neural discount applies
-    tauWeeks: number // decay constant for the neural-phase factor
-    psiMin: number // floor on ψ (advanced lifters still gain, just slower)
-  }
-  stimulus: {
-    windowWeeks: number // recent window used to measure training frequency
-    freqTarget: number // sessions/week at/above which stimulus is considered full
-    sigmaFloor: number // floor on σ (even sparse training keeps this share of the gain)
-  }
-}
-
-// History-driven recommendation, bounded by diminishing returns. We project the lifter's
-// recent kg/week forward (decaying its contribution each later period), scale it by two
-// biological factors — the neural-phase factor ψ (fast early gains slow with training age)
-// and the stimulus factor σ (adaptation tracks imposed frequency/tension) — then clamp the
-// cumulative gain between a small %-of-current floor (so a plateaued lift still gets a
-// target) and a %-of-current ceiling that itself decelerates per quarter (8 % in one
-// quarter, 15 % over two, 25 % over four — a hot streak can't project to absurd numbers).
-// Rough guide only — see docs/METHOD.md "How goals work".
-export const DEFAULT_GOAL_CONFIG: GoalConfig = {
-  quarterWeeks: 13,
-  decay: { mid: 0.7, long: 0.5 },
-  floorPct: { short: 0.03, mid: 0.05, long: 0.08 },
-  capPct: { short: 0.08, mid: 0.15, long: 0.25 },
-  minShortGain: 2.5,
-  round: 2.5,
-  neural: { ageGraceWeeks: 12, tauWeeks: 40, psiMin: 0.55 },
-  stimulus: { windowWeeks: 8, freqTarget: 1.5, sigmaFloor: 0.6 },
-}
-
-const snapTo = (v: number, step: number) => Math.round(v / step) * step
-
-// Current all-time heaviest single for a lift (0 when no history).
-export function currentMaxWeight(rows: SetRow[], lift: LiftKey): number {
-  const pr = liftPR(liftSessions(rows, lift))
-  return pr ? pr.maxWeight : 0
-}
-
-// Logged training age for a lift (weeks from first to last working session). Only a
-// lower bound on true training age — we can't see training before the export.
-export function trainingAgeWeeks(rows: SetRow[], lift: LiftKey): number {
-  const tops = topWorkingSets(rows, lift)
-  if (tops.length < 2) return 0
-  return (tops[tops.length - 1].ts - tops[0].ts) / (7 * 86400000)
-}
-
-// Sessions per week for a lift over the trailing `windowWeeks` (0 when too little data).
-export function sessionFrequency(rows: SetRow[], lift: LiftKey, windowWeeks: number): number {
-  const tops = topWorkingSets(rows, lift)
-  if (tops.length < 2) return 0
-  const W = 7 * 86400000
-  const lastTs = tops[tops.length - 1].ts
-  const cutoff = lastTs - windowWeeks * W
-  const inWindow = tops.filter((t) => t.ts >= cutoff)
-  if (inWindow.length < 2) return 0
-  const span = (lastTs - inWindow[0].ts) / W
-  return span >= 1 ? inWindow.length / span : 0
-}
-
-// Neural-adaptation / diminishing-returns factor ψ ∈ [psiMin, 1]. ≈1 for a novice
-// (early gains are largely neural and fast); decays toward psiMin as logged training
-// age grows (later gains lean on slower structural change).
-export function neuralFactor(ageWeeks: number, cfg: GoalConfig['neural']): number {
-  if (ageWeeks <= cfg.ageGraceWeeks) return 1
-  return Math.max(cfg.psiMin, Math.exp(-(ageWeeks - cfg.ageGraceWeeks) / cfg.tauWeeks))
-}
-
-// Stimulus factor σ ∈ [sigmaFloor, 1] from training frequency — a proxy for the imposed
-// mechanical-tension / MPS dose (SAID, mTOR, mechanotransduction). Full at freqTarget,
-// tempered (not zeroed) below it. Guards to 1 when frequency is unmeasurable.
-export function stimulusFactor(freqPerWeek: number, cfg: GoalConfig['stimulus']): number {
-  if (freqPerWeek <= 0) return 1
-  return Math.max(cfg.sigmaFloor, Math.min(1, cfg.sigmaFloor + (1 - cfg.sigmaFloor) * (freqPerWeek / cfg.freqTarget)))
-}
-
-// Recommended max-weight target per horizon (see DEFAULT_GOAL_CONFIG). Short covers ~one
-// quarter, mid one more, long two more (to the fourth quarter-end); each cumulative gain
-// is the decayed rate projection clamped into [floor%, cap%] of current, then snapped to
-// the plate step and forced strictly increasing with short ≥ current + minShortGain.
-export function recommendedGoals(
-  rows: SetRow[],
-  lift: LiftKey,
-  config: GoalConfig = DEFAULT_GOAL_CONFIG,
-): Record<GoalHorizon, number> {
-  const current = currentMaxWeight(rows, lift)
-  if (current <= 0) return { short: 0, mid: 0, long: 0 }
-  const rate = recentRatePerWeek(rows, lift)
-  const step = config.round
-  const q = config.quarterWeeks
-
-  // Biological scaling of the raw rate projection: ψ (neural phase, by training age)
-  // and σ (stimulus, by training frequency). Both ≤ 1, so they only temper — the floor
-  // still guarantees a minimum target and the cap still bounds the maximum.
-  const psi = neuralFactor(trainingAgeWeeks(rows, lift), config.neural)
-  const sigma = stimulusFactor(sessionFrequency(rows, lift, config.stimulus.windowWeeks), config.stimulus)
-  const scale = psi * sigma
-
-  // Cumulative gain projected from recent rate, its later share decayed, then scaled.
-  const proj: Record<GoalHorizon, number> = {
-    short: rate * q * scale,
-    mid: rate * q * (1 + config.decay.mid) * scale,
-    long: rate * q * (1 + config.decay.mid + 2 * config.decay.long) * scale,
-  }
-  const clampGain = (h: GoalHorizon) => {
-    const floor = Math.max(current * config.floorPct[h], h === 'short' ? config.minShortGain : 0)
-    return Math.min(Math.max(proj[h], floor), current * config.capPct[h])
-  }
-
-  let short = snapTo(current + clampGain('short'), step)
-  if (short < current + config.minShortGain) short = snapTo(current + config.minShortGain, step)
-  let mid = snapTo(current + clampGain('mid'), step)
-  if (mid <= short) mid = short + step
-  let long = snapTo(current + clampGain('long'), step)
-  if (long <= mid) long = mid + step
-  return { short, mid, long }
-}
-
-// Max-weight change per week over the trailing ~`weeksWindow` weeks (best-to-date,
-// so it only reflects genuine PRs; floored at 0).
-export function recentRatePerWeek(rows: SetRow[], lift: LiftKey, weeksWindow = 8): number {
-  const tops = topWorkingSets(rows, lift)
-  if (tops.length < 2) return 0
-  const W = 7 * 86400000
-  const lastTs = tops[tops.length - 1].ts
-  const cutoff = lastTs - weeksWindow * W
-  let current = 0
-  let baseline = 0
-  let haveBaseline = false
-  for (const t of tops) {
-    if (t.load > current) current = t.load
-    if (t.ts <= cutoff) {
-      if (t.load > baseline) baseline = t.load
-      haveBaseline = true
-    }
-  }
-  let weeks = weeksWindow
-  if (!haveBaseline) {
-    baseline = tops[0].load
-    weeks = (lastTs - tops[0].ts) / W
-  }
-  if (weeks < 1) return 0
-  return Math.max(0, round1((current - baseline) / weeks))
-}
-
-// Where the lift's recent rate puts it against the short-term target.
-export function goalPace(current: number, target: number, weeksLeft: number, recentRate: number): GoalPace {
-  if (current >= target) return 'met'
-  if (weeksLeft <= 0) return 'behind'
-  const required = (target - current) / weeksLeft
-  if (required <= 0) return 'met'
-  const ratio = recentRate / required
-  if (ratio >= 1) return 'ahead'
-  if (ratio >= 0.6) return 'on-track'
-  return 'behind'
 }

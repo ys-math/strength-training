@@ -3,7 +3,6 @@ import {
   CartesianGrid,
   Line,
   LineChart,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   type TooltipProps,
@@ -11,15 +10,9 @@ import {
   YAxis,
 } from 'recharts'
 import { LIFT_BY_KEY, LIFTS, type LiftKey } from '../lib/types'
-import {
-  FOCUS_META,
-  recommendedGoals,
-  sessionMaxSeries,
-  type SessionMaxPoint,
-  type Suggestion,
-} from '../lib/metrics'
-import { quarterCheckpoints } from '../lib/goals'
-import { fmtDate, fmtLongDate, fmtPlate } from '../lib/format'
+import { topSetSeries, type TopSetPoint } from '../lib/metrics'
+import { BAND_META, type Prescription } from '../lib/engine'
+import { fmtDate, fmtLongDate } from '../lib/format'
 import type { SetRow } from '../lib/types'
 import ChartCard from './ChartCard'
 import LiftDetailView from './LiftDetail'
@@ -30,61 +23,65 @@ type Scope = 'all' | LiftKey
 const tipClass = 'rounded-lg px-3 py-2 text-xs shadow-lg'
 const tipStyle = { background: 'var(--page)', border: '1px solid var(--border)', color: 'var(--text-primary)' }
 
-// One tooltip for the whole chart. On the synthetic projected column it lists each
-// lift's suggested next-session target; on a real date it shows what was lifted that
-// day, headed by the day's focus — "Light day" is what stops a planned 50 kg bench from
-// reading as a collapse, and it's the only place that answer appears on this card.
+/** The top set a prescription asks for, or null when the band has no history. */
+function topOf(p: Prescription): { load: number; reps: number } | null {
+  const set = p.plan.find((s) => s.kind === 'top')
+  return set ? { load: set.load, reps: set.reps } : null
+}
+
+// One tooltip for the whole chart. On the synthetic projected column it lists each lift's
+// prescribed top set; on a real date it shows the top set logged that day, headed by the
+// day's band — that heading is what stops a planned volume day from reading as a collapse,
+// and it is the only place that answer appears on this card.
 // Projection series (dataKeys ending "__p") never surface as their own rows.
 function ProgressTooltip({
   active,
   payload,
   label,
-  suggestions,
-}: TooltipProps<number, string> & { suggestions: Record<LiftKey, Suggestion> }) {
+  prescriptions,
+}: TooltipProps<number, string> & { prescriptions: Record<LiftKey, Prescription> }) {
   if (!active || !payload || payload.length === 0) return null
   const row = payload[0].payload as Record<string, unknown>
 
   if (row.__projection === true) {
-    const items = LIFTS.filter((l) => row[`${l.key}__p`] != null && suggestions[l.key].prev != null)
+    const items = LIFTS.filter((l) => row[`${l.key}__p`] != null)
     if (items.length === 0) return null
     return (
       <div className={tipClass} style={tipStyle}>
         <div className="mb-1 font-medium" style={{ color: 'var(--text-secondary)' }}>
-          Next session · projected heaviest set
+          Next session · prescribed top set
         </div>
         {items.map((l) => {
-          const s = suggestions[l.key]
+          const p = prescriptions[l.key]
+          const top = topOf(p)
+          if (!top) return null
           return (
             <div key={l.key} className="flex items-center gap-2 py-0.5">
               <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: l.color }} />
               <span style={{ color: 'var(--text-muted)' }}>{l.label}</span>
               <span className="ml-auto tabular-nums font-medium">
-                {s.load} kg × {s.reps}
-                <span style={{ color: 'var(--text-muted)' }}> · {s.sets} {s.sets === 1 ? 'set' : 'sets'}</span>
+                {top.load} kg × {top.reps}
+                <span style={{ color: 'var(--text-muted)' }}> · {BAND_META[p.band].label.toLowerCase()} day</span>
               </span>
             </div>
           )
         })}
-        <div className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-          If you hit the suggested goal.
-        </div>
       </div>
     )
   }
 
   const items = payload.filter((p) => p.value != null && !String(p.dataKey).endsWith('__p'))
   if (items.length === 0) return null
-  const focus = (row as unknown as SessionMaxPoint).focus
+  const band = (row as unknown as TopSetPoint).band
   return (
     <div className={tipClass} style={tipStyle}>
       <div className="mb-1 font-medium" style={{ color: 'var(--text-secondary)' }}>
         {fmtLongDate(String(label))}
-        {/* FOCUS_META.label already carries the word "day" — Heavy day / Moderate day / Volume day. */}
-        {focus && <span style={{ color: 'var(--text-muted)' }}> · {FOCUS_META[focus].label}</span>}
+        {band && <span style={{ color: 'var(--text-muted)' }}> · {BAND_META[band].label} day</span>}
       </div>
       {items.map((p) => {
         const key = p.dataKey as LiftKey
-        const d = (p.payload as SessionMaxPoint).detail?.[key]
+        const d = (p.payload as TopSetPoint).detail?.[key]
         return (
           <div key={key} className="flex items-center gap-2 py-0.5">
             <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: p.color }} />
@@ -120,54 +117,24 @@ function makeEndLabel(lastIndex: number, color: string, text: string, dyExtra: n
   }
 }
 
-// Goal target label: renders "{code} {kg}" at the left edge of a horizontal
-// ReferenceLine, on the same translucent chip treatment as end-labels. Always on
-// the left (end-of-line labels live on the right) so the two groups never collide;
-// `dy` fans out labels whose targets are close in value (see declutterByValue).
-function makeGoalLabel(color: string, text: string, dy: number) {
-  return function GoalLabel(props: { viewBox?: { x?: number; y?: number } }) {
-    const vb = props.viewBox
-    if (vb?.x == null || vb.y == null) return null
-    const x = vb.x + 10
-    const y = vb.y + dy
-    const w = text.length * 5.6 + 8
-    return (
-      <g>
-        <rect x={x - 4} y={y - 9} width={w} height={14} rx={3} fill="var(--page)" fillOpacity={0.85} />
-        <text x={x} y={y + 3} fontSize={10} fontWeight={700} fill={color}>
-          {text}
-        </text>
-      </g>
-    )
-  }
-}
-
 // Two dots in one renderer, because they answer two different questions.
 //
-// The plain dot marks a session this lift was ACTUALLY trained. That is not decoration: the
-// x-axis has one slot per *training day* (any big-four day), so a lift not trained that day is
-// `undefined` and `connectNulls` bridges straight over it. Without dots, that bridge is drawn
-// identically to real data — and it is not a rare edge case: OHP is logged on 14 of 32 days, so
-// **over half** its line is interpolation. The dots are what separate the measured points from
-// the drawn-through ones.
+// The plain dot marks a session this lift logged a top set. That is not decoration: the
+// x-axis has one slot per training day that produced any top set, so a lift without one
+// that day is `undefined` and `connectNulls` bridges straight over it. Without dots the
+// bridge is drawn identically to real data.
 //
-// The haloed dot marks a session where the record actually *advanced*. The line plots each
-// session's own top set, so it rises and falls; dotting every up-tick would call a rebound off
-// a light day a PR (60 → 50 → 60 sets no record). `isPR` is therefore a running max over the
-// full history, decided in `sessionMaxSeries`, not by comparing neighbouring points here.
+// The haloed dot marks a session where the record actually advanced. The line rises and
+// falls with the band, so dotting every up-tick would call a rebound off a volume day a
+// PR. `isPR` is therefore a running max over the full history, decided in `topSetSeries`,
+// not by comparing neighbouring points here.
 //
-// The two must not be told apart by *fill alone* — at 4 lines × 32 points they'd blur together.
-// A PR is bigger AND carries a `--surface-1` ring that punches a gap out of the line behind it,
-// so it reads as an event rather than a slightly fatter dot.
-//
-// `all` is the FULL history and `start` the slice offset, so a zoomed span still reads the
-// right row.
-function makeSessionDot(key: LiftKey, all: readonly SessionMaxPoint[], start: number, color: string) {
+// The two must not be told apart by fill alone — at 4 lines they'd blur. A PR is bigger
+// AND carries a `--surface-1` ring that punches a gap out of the line behind it.
+function makeSessionDot(key: LiftKey, all: readonly TopSetPoint[], color: string) {
   return function SessionDot(props: { cx?: number; cy?: number; index?: number }) {
     if (props.index == null || props.cx == null || props.cy == null) return null
-    const d = all[props.index + start]?.detail?.[key]
-    // No entry = this lift wasn't trained that day; the line here is connectNulls' guess, and
-    // it must stay bare.
+    const d = all[props.index]?.detail?.[key]
     if (!d) return null
     return d.isPR ? (
       <circle cx={props.cx} cy={props.cy} r={4} fill={color} stroke="var(--surface-1)" strokeWidth={2} />
@@ -178,7 +145,7 @@ function makeSessionDot(key: LiftKey, all: readonly SessionMaxPoint[], start: nu
 }
 
 // Hollow "target" ring drawn only at the projected point (the dashed line's tip),
-// so it reads as a goal rather than a logged set.
+// so it reads as a plan rather than a logged set.
 function makeProjDot(projIndex: number, color: string) {
   return function ProjDot(props: { cx?: number; cy?: number; index?: number }) {
     if (props.index !== projIndex || props.cx == null || props.cy == null) return null
@@ -211,31 +178,23 @@ function declutterByValue(points: Partial<Record<LiftKey, number>>, minGap: numb
 
 export default function ProgressChart({
   rows,
-  suggestions,
+  prescriptions,
+  showProjection,
 }: {
+  /** Already sliced to the header's date range. */
   rows: SetRow[]
-  suggestions: Record<LiftKey, Suggestion>
+  prescriptions: Record<LiftKey, Prescription>
+  /** False when the range has been pulled back off the latest session, where a
+   *  next-session projection would be drawn beyond the window's own right edge. */
+  showProjection: boolean
 }) {
-  // Each session's own heaviest working set — every point a weight lifted *that day*.
-  // The line therefore zigzags under DUP, and that is the trade taken: best-to-date could
-  // never descend, so a deload or a light block read as flat and the chart went dead for
-  // weeks. The cost accepted in exchange is that the top of the line is no longer the
-  // record — hence `records` on the legend chips, `isPR` on the dots, and the focus label
-  // in the tooltip. Don't "fix" this back to a monotone series.
-  const { series: data, records } = useMemo(() => sessionMaxSeries(rows), [rows])
+  // Each session's logged TOP SET — one rep band rather than whichever band the session
+  // ran, so the line compares like with like. It still moves with the band, because the
+  // top set is derived from the band's load; the tooltip names the band so a dip reads as
+  // a volume day rather than as lost strength.
+  const { series: data, records } = useMemo(() => topSetSeries(rows), [rows])
   const [hidden, setHidden] = useState<Set<LiftKey>>(new Set())
-  const [showGoals, setShowGoals] = useState(true)
-  const [startIdx, setStartIdx] = useState(0)
   const [scope, setScope] = useState<Scope>('all')
-
-  // Short-term (next fixed calendar quarter) recommended max-weight goal per lift, and
-  // its due date — drawn as horizontal target lines in max-weight mode.
-  const goals = useMemo(
-    () => Object.fromEntries(LIFTS.map((l) => [l.key, recommendedGoals(rows, l.key).short])) as Record<LiftKey, number>,
-    [rows],
-  )
-  const goalDate = useMemo(() => quarterCheckpoints().horizonDate.short, [])
-  const goalsOn = showGoals
 
   const lastIndex = useMemo(() => {
     const map: Record<string, number> = {}
@@ -250,15 +209,13 @@ export default function ProgressChart({
     return map
   }, [data])
 
-  // The per-lift projected top set, drawn whether it rises or falls. It used to be
-  // suppressed unless it beat the standing record — necessary when the line couldn't
-  // descend, but it meant the suggestion was hidden most of the time, since under DUP the
-  // next session is usually *lighter* than the record. A projected light day is a real
-  // prediction and this axis can now say so.
-  const projValue = (key: LiftKey): number | null => suggestions[key].projectedWeight
+  // The prescribed top set, drawn whether it rises or falls. A lighter next session is a
+  // real prediction under this program and the axis can say so.
+  const projValue = (key: LiftKey): number | null =>
+    showProjection ? (topOf(prescriptions[key])?.load ?? null) : null
 
   // Chart data with a synthetic future column: each lift's dashed `${key}__p` series
-  // runs from its last real value to the projected next-session value.
+  // runs from its last real value to the prescribed next-session top set.
   const { chartData, projected } = useMemo(() => {
     type Row = Record<string, number | string | boolean | undefined>
     const base = data as unknown as Row[]
@@ -290,14 +247,13 @@ export default function ProgressChart({
     if (!any) return { chartData: aug, projected: false }
     aug.push(projRow)
     return { chartData: aug, projected: true }
-  }, [data, lastIndex, suggestions])
+  }, [data, lastIndex, prescriptions, showProjection])
 
-  // Index of the appended projected row within chartData (a projected lift's dashed
-  // series and its end-label live at this index).
+  // Index of the appended projected row within chartData.
   const projIndex = data.length
 
-  // Each lift's rightmost plotted value — the projected tip when it projects, else
-  // its last real point — used to place and de-collide the end labels.
+  // Each lift's rightmost plotted value — the projected tip when it projects, else its
+  // last real point — used to place and de-collide the end labels.
   const rightMost = useMemo<Partial<Record<LiftKey, number>>>(() => {
     const m: Partial<Record<LiftKey, number>> = {}
     for (const lift of LIFTS) {
@@ -310,42 +266,17 @@ export default function ProgressChart({
       }
     }
     return m
-  }, [data, lastIndex, projected, suggestions])
+  }, [data, lastIndex, projected, prescriptions, showProjection])
 
-  // Rough value scale of the chart (end points + visible goals) used only to size the
-  // "close enough to collide" threshold below — doesn't need to match the axis exactly.
   const domainMax = useMemo(() => {
-    const vals = [...Object.values(rightMost), ...(goalsOn ? Object.values(goals) : [])].filter(
-      (v): v is number => v != null && v > 0,
-    )
+    const vals = Object.values(rightMost).filter((v): v is number => v != null && v > 0)
     return vals.length ? Math.max(...vals) : 100
-  }, [rightMost, goals, goalsOn])
+  }, [rightMost])
 
   const labelOffsets = useMemo(
     () => declutterByValue(rightMost, Math.max(4, domainMax * 0.05)),
     [rightMost, domainMax],
   )
-
-  const visibleGoals = useMemo<Partial<Record<LiftKey, number>>>(() => {
-    if (!goalsOn) return {}
-    const m: Partial<Record<LiftKey, number>> = {}
-    for (const lift of LIFTS) if (!hidden.has(lift.key) && goals[lift.key] > 0) m[lift.key] = goals[lift.key]
-    return m
-  }, [goalsOn, goals, hidden])
-  const goalLabelOffsets = useMemo(
-    () => declutterByValue(visibleGoals, Math.max(4, domainMax * 0.06), 14),
-    [visibleGoals, domainMax],
-  )
-
-  // Span slider: `start` clamps the history-depth handle; `shown` is the visible slice
-  // (right edge pinned to the latest point / projection). Index-keyed labels & dots are
-  // offset by `start` so they still land on the right rows after slicing.
-  const maxStart = Math.max(0, chartData.length - 2)
-  const start = Math.min(startIdx, maxStart)
-  const shown = start > 0 ? chartData.slice(start) : chartData
-  const canSlide = data.length >= 3
-  const windowStart = shown.length ? fmtLongDate(String((shown[0] as { dateKey: string }).dateKey)) : ''
-  const windowEnd = data.length ? fmtLongDate(data[data.length - 1].dateKey) : ''
 
   const toggle = (k: LiftKey) =>
     setHidden((prev) => {
@@ -358,10 +289,9 @@ export default function ProgressChart({
     <div className="flex flex-wrap justify-end gap-1.5">
       {LIFTS.map((lift) => {
         const off = hidden.has(lift.key)
-        // The all-time record, NOT the last point. On a best-to-date line those were the
-        // same number; on this one the last point is the last session's top set, so a
-        // light day would print "BP 50" and read as "my bench is 50 kg". With the record
-        // no longer drawn as a line, this chip is the only place the card states it.
+        // The record within the visible range, NOT the last point: the line rises and
+        // falls with the band, so a volume day would otherwise print "BP 60" and read as
+        // "my bench is 60 kg".
         const current = records[lift.key] > 0 ? records[lift.key] : undefined
         return (
           <button
@@ -381,28 +311,6 @@ export default function ProgressChart({
         )
       })}
     </div>
-  )
-
-  const goalSwitch = (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={showGoals}
-      onClick={() => setShowGoals((v) => !v)}
-      className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors"
-      style={{ border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
-    >
-      <span
-        className="relative inline-block h-3.5 w-6 rounded-full transition-colors"
-        style={{ background: showGoals ? 'var(--lift-bp)' : 'var(--surface-2)' }}
-      >
-        <span
-          className="absolute top-0.5 h-2.5 w-2.5 rounded-full transition-all"
-          style={{ background: '#fff', left: showGoals ? '12px' : '2px' }}
-        />
-      </span>
-      Goals
-    </button>
   )
 
   // Scope selector — a *separate* control from the legend chips on purpose. The chips
@@ -437,28 +345,22 @@ export default function ProgressChart({
     </div>
   )
 
+  const detailLift = scope !== 'all' ? LIFT_BY_KEY.get(scope)! : null
+
   // Two fixed rows, not one wrapping cluster. The scope selector is LAST on the top row
   // and the row is right-aligned, so it stays pinned to the same corner whether or not the
   // legend exists — the controls never shift under you when you change scope.
-  const detailLift = scope !== 'all' ? LIFT_BY_KEY.get(scope)! : null
-
-  // The Goals switch is hidden in a lift scope, not merely inert: a goal is a
-  // *max-weight* kg number (65 kg), and the drill-down's axis is kg of *volume*
-  // (0–~2000). The target has no coordinate there, so the control has nothing to toggle.
   const controls = (
     <div className="flex flex-col items-end gap-1.5">
-      <div className="flex items-center gap-1.5">
-        {!detailLift && goalSwitch}
-        {scopeSelector}
-      </div>
+      {scopeSelector}
       {!detailLift && legend}
     </div>
   )
 
-  const title = detailLift ? `${detailLift.label} detail` : 'Max weight lifted'
+  const title = detailLift ? `${detailLift.label} detail` : 'Top set lifted'
   const subtitle = detailLift
     ? 'Every set performed — block height is the weight, so a column is the session’s volume'
-    : 'Heaviest working set each session, per lift — actual weight, never an estimate'
+    : 'The heavy top set each session, per lift — actual weight, never an estimate'
 
   if (detailLift) {
     return (
@@ -472,7 +374,7 @@ export default function ProgressChart({
     <ChartCard title={title} subtitle={subtitle} right={controls}>
       <div style={{ width: '100%', height: 280 }}>
         <ResponsiveContainer>
-          <LineChart data={shown} margin={{ top: 8, right: 56, bottom: 4, left: 4 }}>
+          <LineChart data={chartData} margin={{ top: 8, right: 56, bottom: 4, left: 4 }}>
             <CartesianGrid stroke="var(--gridline)" vertical={false} />
             <XAxis
               dataKey="dateKey"
@@ -487,29 +389,7 @@ export default function ProgressChart({
               stroke="var(--baseline)"
               tickFormatter={(v: number) => `${v}`}
             />
-            <Tooltip content={<ProgressTooltip suggestions={suggestions} />} />
-            {goalsOn &&
-              LIFTS.map((lift) =>
-                hidden.has(lift.key) || !(goals[lift.key] > 0) ? null : (
-                  <ReferenceLine
-                    key={`${lift.key}__goal`}
-                    y={goals[lift.key]}
-                    stroke={lift.color}
-                    strokeDasharray="4 4"
-                    strokeOpacity={0.7}
-                    ifOverflow="extendDomain"
-                    // Always on the left — end-of-line labels live on the right — so the
-                    // two label groups never collide; declutter fans out close targets.
-                    label={
-                      makeGoalLabel(
-                        lift.color,
-                        `${lift.key} ${fmtPlate(goals[lift.key])}`,
-                        goalLabelOffsets[lift.key] ?? 0,
-                      ) as never
-                    }
-                  />
-                ),
-              )}
+            <Tooltip content={<ProgressTooltip prescriptions={prescriptions} />} />
             {LIFTS.map((lift) =>
               hidden.has(lift.key) ? null : (
                 <Line
@@ -519,16 +399,15 @@ export default function ProgressChart({
                   name={lift.label}
                   stroke={lift.color}
                   strokeWidth={2}
-                  dot={makeSessionDot(lift.key, data, start, lift.color) as never}
+                  dot={makeSessionDot(lift.key, data, lift.color) as never}
                   activeDot={{ r: 4, strokeWidth: 0 }}
                   connectNulls
                   isAnimationActive={false}
                   label={
-                    // Non-projecting lifts (deload / no history) keep the code label at
-                    // their last real point; projecting lifts label the dashed tip instead.
+                    // Projecting lifts label the dashed tip instead of their last real point.
                     projected && projValue(lift.key) != null
                       ? undefined
-                      : (makeEndLabel(lastIndex[lift.key] - start, lift.color, lift.key, labelOffsets[lift.key] ?? 0) as never)
+                      : (makeEndLabel(lastIndex[lift.key], lift.color, lift.key, labelOffsets[lift.key] ?? 0) as never)
                   }
                 />
               ),
@@ -543,12 +422,12 @@ export default function ProgressChart({
                     stroke={lift.color}
                     strokeWidth={2}
                     strokeDasharray="5 4"
-                    dot={makeProjDot(projIndex - start, lift.color) as never}
+                    dot={makeProjDot(projIndex, lift.color) as never}
                     activeDot={false}
                     connectNulls
                     isAnimationActive={false}
                     legendType="none"
-                    label={makeEndLabel(projIndex - start, lift.color, lift.key, labelOffsets[lift.key] ?? 0) as never}
+                    label={makeEndLabel(projIndex, lift.color, lift.key, labelOffsets[lift.key] ?? 0) as never}
                   />
                 ),
               )}
@@ -556,44 +435,16 @@ export default function ProgressChart({
         </ResponsiveContainer>
       </div>
 
-      {canSlide && (
-        <div className="mt-3 flex items-center gap-3">
-          <span className="shrink-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            Span
-          </span>
-          <input
-            type="range"
-            min={0}
-            max={maxStart}
-            value={start}
-            onChange={(e) => setStartIdx(Number(e.target.value))}
-            aria-label="Show from"
-            className="h-1 flex-1 cursor-pointer appearance-none rounded-full"
-            style={{ accentColor: 'var(--lift-bp)', background: 'var(--surface-2)' }}
-          />
-          <span className="shrink-0 text-right text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-            {windowStart} – {windowEnd}
-          </span>
-        </div>
-      )}
-
-      {/* The chart's one hazard, stated where it's read: under DUP the engine *plans* light
-          days, so a drop here is usually the program working, not lost strength. */}
+      {/* The chart's one hazard, stated where it's read. */}
       <p className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-        Dips are planned light days, not lost strength — the program undulates heavy/moderate/light.
-        A dot = a session that lift was trained; a ringed dot = a new record. Between dots the line is
-        drawn through, not measured.
+        The top set follows the day’s band, so a dip is usually a volume day rather than lost
+        strength. A dot = a session with a logged top set; a ringed dot = a new record. Between
+        dots the line is drawn through, not measured.
       </p>
 
-      {(projected || goalsOn) && (
+      {projected && (
         <p className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-          {projected && 'Dotted = projected next session if you hit the suggested goal (see Next session). '}
-          {goalsOn &&
-            `Dashed horizontal = 3-month goal (by ${goalDate.toLocaleDateString(undefined, {
-              year: 'numeric',
-              month: 'short',
-              day: 'numeric',
-            })}, this fixed quarter).`}
+          Dotted = the top set prescribed for your next session (see Next session).
         </p>
       )}
     </ChartCard>

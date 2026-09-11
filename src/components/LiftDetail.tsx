@@ -213,7 +213,7 @@ function SessionTooltip({
 //      the LIGHTEST session (Jul 8 bench: 60 kg, 900 kg volume — a short column; Jul 10:
 //      50 kg, 1700 kg — the tallest). Correct by definition.
 //   3. The domain is the biggest session ON SCREEN, so the tallest visible column always
-//      fills the plot — and dragging the span slider therefore rescales every block. A
+//      fills the plot — and narrowing the header's date range therefore rescales every block. A
 //      block's pixel height is only comparable *within* one view. `liftGrowth` is scoped to
 //      the same window for the same reason: the whole card describes the sessions you see.
 export default function LiftDetailView({ rows, lift: liftKey }: { rows: SetRow[]; lift: LiftKey }) {
@@ -222,23 +222,21 @@ export default function LiftDetailView({ rows, lift: liftKey }: { rows: SetRow[]
   const data = useMemo(() => liftSetSeries(rows, liftKey), [rows, liftKey])
   const pr = useMemo(() => liftPR(liftSessions(rows, liftKey)), [rows, liftKey])
 
-  const [startIdx, setStartIdx] = useState(0)
   const [hover, setHover] = useState<string | null>(null)
   // A tap pins; a mouse hovers. A pin outranks a hover, so a pinned column stays open while
   // the mouse wanders. See SessionColumn for why these can't be one state.
   const [pinned, setPinned] = useState<string | null>(null)
   const active = pinned ?? hover
 
-  const maxStart = Math.max(0, data.length - 2)
-  const start = Math.min(startIdx, maxStart)
-  const shown = start > 0 ? data.slice(start) : data
-  const canSlide = data.length >= 3
+  // `rows` arrives already sliced to the header's date range, so "on screen" and "in the
+  // data" are the same set here.
+  const shown = data
 
   // The axis tops out at the biggest session ON SCREEN, so the tallest visible column
-  // always fills the plot. Consequence to know: dragging the slider past an outlier
-  // rescales every block, so a block's pixel height is only comparable *within* one view.
-  // The growth stats above are scoped to the same window, so the whole card describes the
-  // sessions you can actually see.
+  // always fills the plot. Consequence to know: narrowing the header's range past an
+  // outlier rescales every block, so a block's pixel height is only comparable *within*
+  // one view. The growth stats above are scoped to the same window, so the whole card
+  // describes the sessions you can actually see.
   const domainMax = useMemo(() => Math.max(1, ...shown.map((s) => s.volume)), [shown])
   const pxPerKg = BODY_H / domainMax
 
@@ -367,34 +365,13 @@ export default function LiftDetailView({ rows, lift: liftKey }: { rows: SetRow[]
         ))}
       </div>
 
-      {canSlide && (
-        <div className="mt-3 flex items-center gap-3">
-          <span className="shrink-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            Span
-          </span>
-          <input
-            type="range"
-            min={0}
-            max={maxStart}
-            value={start}
-            onChange={(e) => setStartIdx(Number(e.target.value))}
-            aria-label="Show from"
-            className="h-1 flex-1 cursor-pointer appearance-none rounded-full"
-            style={{ accentColor: lift.color, background: 'var(--surface-2)' }}
-          />
-          <span className="shrink-0 text-right text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-            {shown.length} of {data.length} sessions
-          </span>
-        </div>
-      )}
-
       <p className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
         One column per session, one block per rep, a gray band at each new set — each block as tall as
         the weight lifted, so a column's height <em>is</em> that session's {lift.label} volume. Working
         sets only; warmups are excluded, so a day's kg here matches the Session-volume card exactly. The
         axis tops out at the biggest session <em>on screen</em>, and the two rates above cover the same
-        span — so dragging the slider rescales the blocks. Tap or hover a column for the loads: the axis
-        measures volume, not weight, so a heavy session can be a short column.
+        span — so narrowing the date range rescales the blocks. Tap or hover a column for the loads: the
+        axis measures volume, not weight, so a heavy session can be a short column.
       </p>
     </>
   )

@@ -36,10 +36,10 @@
   --seq-3: #3987e5;
   --seq-4: #6da7ec;
 
-  /* Categorical intensity (DUP focus) — cool → hot */
-  --focus-light:    #3987e5;
-  --focus-moderate: #199e70;
-  --focus-heavy:    #d64545;
+  /* Categorical rep band — cool → hot */
+  --band-volume:    #3987e5;
+  --band-moderate:  #199e70;
+  --band-heavy:     #d64545;
 }
 
 [data-theme='modern-light'] {
@@ -69,9 +69,9 @@
   --seq-3: #3987e5;
   --seq-4: #1a56ad;
 
-  --focus-light:    #2166c9;
-  --focus-moderate: #0f8a63;
-  --focus-heavy:    #c0392b;
+  --band-volume:    #2166c9;
+  --band-moderate:  #0f8a63;
+  --band-heavy:     #c0392b;
 }
 
 [data-theme='cozy'] {
@@ -104,9 +104,9 @@
   --seq-4: #8a3b26;
 
   /* Same cool → hot reading, re-toned into cozy's register. */
-  --focus-light:    #5b7fa6; /* dusty blue */
-  --focus-moderate: #5c8a52; /* sage       */
-  --focus-heavy:    #b5563a; /* terracotta */
+  --band-volume:    #5b7fa6; /* dusty blue */
+  --band-moderate:  #5c8a52; /* sage       */
+  --band-heavy:     #b5563a; /* terracotta */
 }
 
 html,
@@ -121,4 +121,52 @@ body {
   color: var(--text-primary);
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Dual-range span picker. Two native sliders share one track: each input is
+   transparent and pointer-inert except for its thumb, so both handles stay grabbable
+   over the same 100% width. */
+.span-range {
+  position: relative;
+  height: 20px;
+}
+.span-range input[type='range'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  background: none;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.span-range input[type='range']:focus-visible {
+  outline: 2px solid var(--text-muted);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.span-range input[type='range']::-webkit-slider-thumb {
+  pointer-events: auto;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  border: 2px solid var(--surface-1);
+  cursor: pointer;
+}
+.span-range input[type='range']::-moz-range-thumb {
+  pointer-events: auto;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--surface-1);
+  border-radius: 50%;
+  background: var(--text-primary);
+  cursor: pointer;
+}
+.span-range input[type='range']::-webkit-slider-runnable-track,
+.span-range input[type='range']::-moz-range-track {
+  background: none;
 }

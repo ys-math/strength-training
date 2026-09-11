@@ -12,7 +12,7 @@ export default function ChartTooltip({
   valueFormatter?: (value: number) => string
 }) {
   if (!active || !payload || payload.length === 0) return null
-  // Projection series (dataKey ending "__p") carry the dashed "if you hit the goal"
+  // Projection series (dataKey ending "__p") carry the dashed next-session
   // continuation; they shouldn't show as real rows in the tooltip.
   const items = payload.filter((p) => p.value != null && !String(p.dataKey).endsWith('__p'))
   if (items.length === 0) return null
