@@ -1,37 +1,29 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  FOCUS_COLOR,
-  FOCUS_META,
   dailyMetrics,
-  focusMix,
   frequencyStats,
   overallStats,
   quantileThresholds,
   sessionDetails,
   volumeBucket,
-  type DayFocus,
   type DayMetrics,
   type SessionDetail,
 } from '../lib/metrics'
+import { BAND_COLOR, BAND_META, bandMix, type RepBand } from '../lib/engine'
 import { fmtLongDate, fmtTonnage, shortExerciseName } from '../lib/format'
-import type { HeatmapMetric } from '../lib/heatmapMetric'
+import type { BandMetric } from '../lib/bandMetric'
 import type { SetRow } from '../lib/types'
 import ChartCard from './ChartCard'
-import HeatmapMetricToggle from './HeatmapMetricToggle'
+import BandMetricToggle from './BandMetricToggle'
 
 const SEQ = ['var(--seq-0)', 'var(--seq-1)', 'var(--seq-2)', 'var(--seq-3)', 'var(--seq-4)']
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-const EMPTY_DAY: DayMetrics = { sets: 0, volume: 0, focus: null, focusReps: null }
+const EMPTY_DAY: DayMetrics = { sets: 0, volume: 0, band: null, bandReps: null }
 
-// Focus labels for the legend. Deliberately the DayFocus keys, not FOCUS_META's labels
-// (whose `light` reads "Volume day") — a legend wants the scale's own vocabulary.
-const FOCUS_LEGEND: { focus: DayFocus; label: string }[] = [
-  { focus: 'light', label: 'Light' },
-  { focus: 'moderate', label: 'Moderate' },
-  { focus: 'heavy', label: 'Heavy' },
-]
+// Ordered light-to-heavy for the mix bar, which reads as a scale rather than a list.
+const BAND_LEGEND: RepBand[] = ['volume', 'moderate', 'heavy']
 
 // Working-set count → sequential bucket (single blue hue, light→dark).
 function bucket(count: number): number {
@@ -67,7 +59,7 @@ function HeatmapTooltip({ hover, session }: { hover: HoverInfo; session?: Sessio
   const left = Math.min(Math.max(idealLeft, 8 + HALF_WIDTH), window.innerWidth - 8 - HALF_WIDTH)
   const showBelow = hover.rect.top < 90
 
-  const { sets, volume, focus, focusReps } = hover.day
+  const { sets, volume, band, bandReps } = hover.day
   const activeExercises = session?.exercises.filter((e) => e.workingSets > 0) ?? []
 
   return (
@@ -92,10 +84,10 @@ function HeatmapTooltip({ hover, session }: { hover: HoverInfo; session?: Sessio
       {/* The reps are the whole of the evidence behind the label — printing them makes it
           auditable, so a day that disagrees with what you remember lifting is one glance
           from being settled. */}
-      {focus && (
+      {band && (
         <div style={{ color: 'var(--text-secondary)' }}>
-          {FOCUS_META[focus].label}
-          {focusReps != null && ` · ${focusReps} reps at working load`}
+          {BAND_META[band].label}
+          {bandReps != null && ` · ${bandReps} reps at working load`}
         </div>
       )}
       {activeExercises.length > 0 && (
@@ -109,24 +101,31 @@ function HeatmapTooltip({ hover, session }: { hover: HoverInfo; session?: Sessio
 
 export default function FrequencyHeatmap({
   rows,
+  allRows,
   metric,
   setMetric,
 }: {
+  /** The date range's slice — the grid, the chips and the mix bar all describe this. */
   rows: SetRow[]
-  metric: HeatmapMetric
-  setMetric: (m: HeatmapMetric) => void
+  /** Full history. Only the colour cut points read it, so a day's shade never depends on
+   *  what else happens to be on screen. */
+  allRows: SetRow[]
+  metric: BandMetric
+  setMetric: (m: BandMetric) => void
 }) {
-  const { weeks, monthLabels, stats, totalSets, volumeThresholds } = useMemo(() => {
+  const volumeThresholds = useMemo(
+    () => quantileThresholds([...dailyMetrics(allRows).values()].map((d) => d.volume)),
+    [allRows],
+  )
+
+  const { weeks, monthLabels, stats, totalSets } = useMemo(() => {
     const days = dailyMetrics(rows)
     const stats = overallStats(rows)
     const totalSets = [...days.values()].reduce((sum, d) => sum + d.sets, 0)
-    // Bucketed against the whole history, never the rendered slice — otherwise a day's
-    // shade would depend on what else happens to be on screen.
-    const volumeThresholds = quantileThresholds([...days.values()].map((d) => d.volume))
 
     type Cell = { key: string; day: DayMetrics; inRange: boolean }
     if (!stats.firstDate) {
-      return { weeks: [] as Cell[][], monthLabels: [] as (string | null)[], stats, totalSets, volumeThresholds }
+      return { weeks: [] as Cell[][], monthLabels: [] as (string | null)[], stats, totalSets }
     }
 
     const first = new Date(stats.firstDate)
@@ -169,11 +168,11 @@ export default function FrequencyHeatmap({
       return MONTH_SHORT[Number(candidate.key.slice(5, 7)) - 1]
     })
 
-    return { weeks, monthLabels, stats, totalSets, volumeThresholds }
+    return { weeks, monthLabels, stats, totalSets }
   }, [rows])
 
   const freq = useMemo(() => frequencyStats(rows), [rows])
-  const mix = useMemo(() => focusMix(rows), [rows])
+  const mix = useMemo(() => bandMix(rows), [rows])
 
   const sessionsByDate = useMemo(() => {
     const map = new Map<string, SessionDetail>()
@@ -184,12 +183,12 @@ export default function FrequencyHeatmap({
   const [hover, setHover] = useState<HoverInfo | null>(null)
 
   // --seq-0 always means "didn't train", in every mode. Sets and volume are ordinal, so
-  // they read off the sequential ramp; intensity is categorical, so it reads off its own
-  // hues (see FOCUS_COLOR).
+  // they read off the sequential ramp; band is categorical, so it reads off its own hues
+  // (BAND_COLOR is the one map, shared with the Next-session card).
   const colorOf = (day: DayMetrics): string => {
     if (day.sets === 0) return SEQ[0]
     if (metric === 'volume') return SEQ[volumeBucket(day.volume, volumeThresholds)]
-    if (metric === 'intensity') return day.focus ? FOCUS_COLOR[day.focus] : SEQ[0]
+    if (metric === 'band') return day.band ? BAND_COLOR[day.band] : SEQ[0]
     return SEQ[bucket(day.sets)]
   }
 
@@ -204,7 +203,7 @@ export default function FrequencyHeatmap({
     <ChartCard
       title="Training frequency"
       subtitle={`${stats.totalSessions} sessions · ${totalSets} working sets`}
-      right={<HeatmapMetricToggle metric={metric} setMetric={setMetric} />}
+      right={<BandMetricToggle metric={metric} setMetric={setMetric} />}
     >
       <div className="flex h-full flex-col justify-between gap-3">
         <div className="grid grid-cols-3 gap-2">
@@ -224,44 +223,42 @@ export default function FrequencyHeatmap({
           ))}
         </div>
 
-        {/* The distribution behind the Intensity mode, as a proportion — a row of three
-            counts tells you the numbers but not the *balance*, which is the thing you'd act
-            on ("I'm two-thirds heavy"). Same hues as the grid's intensity mode and the
-            Next-session focus banner (FOCUS_COLOR is the one map), and it names all three,
-            so in intensity mode it does the legend's job with counts attached — which is
-            why the legend below drops its swatches in that mode rather than repeating them. */}
+        {/* The distribution behind the Band mode, as a proportion — a row of three counts
+            tells you the numbers but not the *balance*, which is the thing you'd act on
+            ("I'm two-thirds heavy"). Same hues as the grid's band mode and the Next-session
+            band chip (BAND_COLOR is the one map), and it names all three, so in band mode it
+            does the legend's job with counts attached — which is why the legend below drops
+            its swatches in that mode rather than repeating them. */}
         {mix.total > 0 && (
           <div className="rounded-lg px-3 py-4" style={{ border: '1px solid var(--border)' }}>
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                Intensity mix
+                Band mix
               </span>
               <span className="text-[10px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
                 {mix.total} training days
               </span>
             </div>
             <div className="mt-3 flex h-3 overflow-hidden rounded-full" style={{ background: 'var(--seq-0)' }}>
-              {FOCUS_LEGEND.map(({ focus }) => {
-                const pct = (mix[focus] / mix.total) * 100
+              {BAND_LEGEND.map((band) => {
+                const pct = (mix[band] / mix.total) * 100
                 if (pct === 0) return null
-                return (
-                  <div key={focus} style={{ width: `${pct}%`, background: FOCUS_COLOR[focus] }} />
-                )
+                return <div key={band} style={{ width: `${pct}%`, background: BAND_COLOR[band] }} />
               })}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-              {FOCUS_LEGEND.map(({ focus, label }) => (
-                <span key={focus} className="flex items-center gap-1.5 text-[10px]">
+              {BAND_LEGEND.map((band) => (
+                <span key={band} className="flex items-center gap-1.5 text-[10px]">
                   <span
                     className="h-[9px] w-[9px] shrink-0 rounded-sm"
-                    style={{ background: FOCUS_COLOR[focus], outline: '1px solid var(--border)' }}
+                    style={{ background: BAND_COLOR[band], outline: '1px solid var(--border)' }}
                   />
-                  <span style={{ color: 'var(--text-muted)' }}>{label}</span>
+                  <span style={{ color: 'var(--text-muted)' }}>{BAND_META[band].label}</span>
                   <span className="tabular-nums font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {mix[focus]}
+                    {mix[band]}
                   </span>
                   <span className="tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                    ({Math.round((mix[focus] / mix.total) * 100)}%)
+                    ({Math.round((mix[band] / mix.total) * 100)}%)
                   </span>
                 </span>
               ))}
@@ -275,7 +272,7 @@ export default function FrequencyHeatmap({
                 `auto` column (the weekday labels) absorbs all the slack, shoving the cells
                 to the right edge. Shrink-to-fit keeps the calendar left-aligned.
                 Cells stay a fixed 13px — a GitHub-style calendar, deliberately small. The
-                card's leftover height is filled by the stat chips and the intensity-mix bar
+                card's leftover height is filled by the stat chips and the band-mix bar
                 above, NOT by inflating the cells (that was tried and read as oversized). */}
             <div
               className="inline-grid gap-[3px]"
@@ -326,11 +323,11 @@ export default function FrequencyHeatmap({
         )}
 
         {/* Ordinal modes need a captioned ramp. The categorical mode doesn't need a legend
-            here at all any more: the Intensity-mix bar above already names all three hues
+            here at all any more: the Band-mix bar above already names all three hues
             AND gives their counts, so repeating bare swatches would just say it twice. */}
         <div className="flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-          {metric === 'intensity' ? (
-            <span>Shade = the day’s intensity — see the mix above.</span>
+          {metric === 'band' ? (
+            <span>Shade = the day’s rep band — see the mix above.</span>
           ) : (
             <>
               <span>Less</span>

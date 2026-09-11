@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import {
   Bar,
   CartesianGrid,
@@ -16,7 +16,6 @@ import {
   weeklyVolume,
   SESSION_BASELINE_WINDOW,
   type SessionVolume,
-  type WeekVolume,
 } from '../lib/metrics'
 import { fmtLongDate, fmtTonnage } from '../lib/format'
 import type { SetRow } from '../lib/types'
@@ -83,44 +82,36 @@ function SessionTooltip({ active, payload }: TooltipProps<number, string>) {
 // A week's bar is the sum of its sessions' bars, so the two readings always agree.
 export default function VolumeCard({
   rows,
+  allRows,
   grain,
   setGrain,
 }: {
+  /** Already sliced to the date range. */
   rows: SetRow[]
+  /** Full history. Only the trailing baseline reads it. */
+  allRows: SetRow[]
   grain: VolumeGrain
   setGrain: (g: VolumeGrain) => void
 }) {
   const weeks = useMemo(() => weeklyVolume(rows), [rows])
-  // Computed over the full history, then sliced for display — so the baseline a session
-  // is judged against never changes as the span slider moves.
-  const sessions = useMemo(() => sessionVolume(rows), [rows])
-  // One slider position per grain: reusing a single index across grains would silently
-  // reframe the other chart (session 20 is a very different date than week 20).
-  const [weekStart, setWeekStart] = useState(0)
-  const [sessionStart, setSessionStart] = useState(0)
+  // Computed over the FULL history, then sliced for display — so the baseline a session is
+  // judged against never changes as the date range moves. Computing it on the visible
+  // slice would give the first six visible bars a baseline that shifts as you drag, which
+  // would look like a data bug rather than a code one.
+  const sessions = useMemo(() => {
+    const visible = new Set(rows.map((r) => r.dateKey))
+    return sessionVolume(allRows).filter((s) => visible.has(s.dateKey))
+  }, [allRows, rows])
 
   const isSession = grain === 'session'
   const lastKey = LIFTS[LIFTS.length - 1].key
 
   // The two grains are built to be structurally IDENTICAL — same subtitle shape, same
-  // header chip, same slider, same footnote — so the card's height cannot change when you
-  // toggle. That matters beyond this card: it shares a grid row with the heatmap, which is
-  // h-full and would otherwise resize in sympathy every time you flipped the grain.
+  // header chip, same footnote — so the card's height cannot change when you toggle. That
+  // matters beyond this card: it shares a grid row with the heatmap, which is h-full and
+  // would otherwise resize in sympathy every time you flipped the grain.
   const data = isSession ? sessions : weeks
-  const startIdx = isSession ? sessionStart : weekStart
-  const setStartIdx = isSession ? setSessionStart : setWeekStart
-  const maxStart = Math.max(0, data.length - 2)
-  const start = Math.min(startIdx, maxStart)
-  const canSlide = data.length >= 3
-  const shown = start > 0 ? data.slice(start) : data
-
-  // Both grains label the visible window; session by date, week by its Monday label.
-  const spanLabel = (d: (typeof data)[number] | undefined) => {
-    if (!d) return ''
-    return isSession ? fmtLongDate((d as SessionVolume).dateKey) : (d as WeekVolume).label
-  }
-  const windowStart = spanLabel(shown[0])
-  const windowEnd = spanLabel(data[data.length - 1])
+  const shown = data
 
   const lastSession = sessions[sessions.length - 1]
   const lastWeek = weeks[weeks.length - 1]
@@ -208,27 +199,6 @@ export default function VolumeCard({
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-
-      {canSlide && (
-        <div className="mt-3 flex items-center gap-3">
-          <span className="shrink-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            Span
-          </span>
-          <input
-            type="range"
-            min={0}
-            max={maxStart}
-            value={start}
-            onChange={(e) => setStartIdx(Number(e.target.value))}
-            aria-label="Show from"
-            className="h-1 flex-1 cursor-pointer appearance-none rounded-full"
-            style={{ accentColor: 'var(--lift-bp)', background: 'var(--surface-2)' }}
-          />
-          <span className="shrink-0 text-right text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-            {windowStart} – {windowEnd}
-          </span>
-        </div>
-      )}
 
       <p className="mt-2 truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
         {footnote}

@@ -36,42 +36,53 @@
   --seq-3: #3987e5;
   --seq-4: #6da7ec;
 
-  /* Categorical intensity (DUP focus) — cool → hot */
-  --focus-light:    #3987e5;
-  --focus-moderate: #199e70;
-  --focus-heavy:    #d64545;
+  /* Categorical rep band — cool → hot */
+  --band-volume:    #3987e5;
+  --band-moderate:  #199e70;
+  --band-heavy:     #d64545;
 }
 
 [data-theme='modern-light'] {
   color-scheme: light;
 
-  --page:           #f7f7f5;
+  /* Surfaces sit a step brighter than the dark theme's inverse would suggest: the page is
+     near-white and the chart surface is white, which is what the palette's light steps below
+     were validated against. */
+  --page:           #fbfbfa;
   --surface-1:      #ffffff;
-  --surface-2:      #e7e6e1;
+  --surface-2:      #edece7;
   --text-primary:   #141412;
   --text-secondary: #46453e;
   --text-muted:     #7a786e;
-  --gridline:       #e7e6e1;
-  --baseline:       #d4d2c9;
+  --gridline:       #edece7;
+  --baseline:       #dcdad2;
   --border:         rgba(0, 0, 0, 0.08);
   --hover-tint:     rgba(0, 0, 0, 0.04);
+  /* Ink, not a series color — kept dark enough to read as text. */
   --delta-good:     #0a8f0a;
   --hero-gradient:  linear-gradient(160deg, rgba(57, 135, 229, 0.16), var(--surface-1));
 
-  --lift-bp:  #2166c9;
-  --lift-sq:  #0f8a63;
-  --lift-dl:  #b06f00;
-  --lift-ohp: #087a08;
+  /* The palette's LIGHT steps, not darkened copies of the dark theme's. The previous
+     hand-darkened set failed CVD separation outright: deadlift yellow and overhead-press
+     green sat at ΔE 2.4 under protanopia, indistinguishable. These clear every check
+     (worst adjacent ΔE 9.1 protan, 22.9 normal). Aqua and yellow fall under 3:1 contrast
+     on white, which the relief rule covers — the chart carries direct end-labels and a
+     legend stating each value, so identity is never color-alone. */
+  --lift-bp:  #2a78d6; /* blue   — Bench Press   */
+  --lift-sq:  #1baf7a; /* aqua   — Squat         */
+  --lift-dl:  #eda100; /* yellow — Deadlift      */
+  --lift-ohp: #008300; /* green  — Overhead Press*/
 
-  --seq-0: #e9e8e3;
-  --seq-1: #bcd4f2;
-  --seq-2: #7fa8e0;
-  --seq-3: #3987e5;
-  --seq-4: #1a56ad;
+  /* One hue, still monotonic light → dark, stepped brighter across the whole ramp. */
+  --seq-0: #eeede8;
+  --seq-1: #b7d3f6;
+  --seq-2: #86b6ef;
+  --seq-3: #5598e7;
+  --seq-4: #2a78d6;
 
-  --focus-light:    #2166c9;
-  --focus-moderate: #0f8a63;
-  --focus-heavy:    #c0392b;
+  --band-volume:    #2a78d6;
+  --band-moderate:  #1baf7a;
+  --band-heavy:     #e34948;
 }
 
 [data-theme='cozy'] {
@@ -104,9 +115,9 @@
   --seq-4: #8a3b26;
 
   /* Same cool → hot reading, re-toned into cozy's register. */
-  --focus-light:    #5b7fa6; /* dusty blue */
-  --focus-moderate: #5c8a52; /* sage       */
-  --focus-heavy:    #b5563a; /* terracotta */
+  --band-volume:    #5b7fa6; /* dusty blue */
+  --band-moderate:  #5c8a52; /* sage       */
+  --band-heavy:     #b5563a; /* terracotta */
 }
 
 html,
@@ -121,4 +132,52 @@ body {
   color: var(--text-primary);
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Dual-range span picker. Two native sliders share one track: each input is
+   transparent and pointer-inert except for its thumb, so both handles stay grabbable
+   over the same 100% width. */
+.span-range {
+  position: relative;
+  height: 20px;
+}
+.span-range input[type='range'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  background: none;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.span-range input[type='range']:focus-visible {
+  outline: 2px solid var(--text-muted);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.span-range input[type='range']::-webkit-slider-thumb {
+  pointer-events: auto;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  border: 2px solid var(--surface-1);
+  cursor: pointer;
+}
+.span-range input[type='range']::-moz-range-thumb {
+  pointer-events: auto;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--surface-1);
+  border-radius: 50%;
+  background: var(--text-primary);
+  cursor: pointer;
+}
+.span-range input[type='range']::-webkit-slider-runnable-track,
+.span-range input[type='range']::-moz-range-track {
+  background: none;
 }

@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest'
-import { epley } from './parse'
 import type { LiftKey, SetRow } from './types'
 import { SESSION_BASELINE_WINDOW, sessionVolume } from './metrics'
 
@@ -24,8 +23,6 @@ function set(
     isWarmup: !!opts.warmup,
     weight,
     reps,
-    e1rm: epley(weight, reps),
-    rpe: null,
   }
 }
 

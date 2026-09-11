@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { epley } from './parse'
 import type { LiftKey, SetRow } from './types'
-import { classifyFocus, cumulativeSeries, liftGrowth, liftSetSeries, sessionVolume } from './metrics'
+import { cumulativeSeries, liftGrowth, liftSetSeries, sessionVolume } from './metrics'
 
 let order = 0
 
@@ -22,8 +21,6 @@ function set(
     isWarmup: !!opts.warmup,
     weight,
     reps,
-    e1rm: epley(weight, reps),
-    rpe: null,
   }
 }
 
@@ -163,22 +160,6 @@ describe('liftGrowth — the two rates above the blocks', () => {
       maxWeight: 0,
       maxWeightPerWeek: null,
     })
-  })
-})
-
-// classifyFocus still grades every training day for the heatmap, the mix bar and the DUP
-// engine, even though the drill-down no longer colors by it.
-describe('classifyFocus', () => {
-  it('buckets by window ceilings, so no rep count falls through', () => {
-    expect(classifyFocus(5)).toBe('heavy')
-    expect(classifyFocus(8)).toBe('moderate')
-    expect(classifyFocus(9)).toBe('light')
-  })
-
-  it('keeps reps that fall outside every DUP window', () => {
-    expect(classifyFocus(1)).toBe('heavy')
-    expect(classifyFocus(2)).toBe('heavy')
-    expect(classifyFocus(15)).toBe('light')
   })
 })
 

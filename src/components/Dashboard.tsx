@@ -1,9 +1,10 @@
-import { useMemo } from 'react'
-import { LIFTS, type LiftKey, type SetRow } from '../lib/types'
-import { nextSessionSuggestion, overallStats, recommendedGoals, type GoalContext } from '../lib/metrics'
+import { useMemo, useState } from 'react'
+import type { LiftKey, SetRow } from '../lib/types'
+import { nextSession, type Prescription } from '../lib/engine'
+import { overallStats } from '../lib/metrics'
 import { fmtLongDate } from '../lib/format'
-import { quarterCheckpoints, weeksUntil } from '../lib/goals'
-import { useHeatmapMetric } from '../hooks/useHeatmapMetric'
+import { fullRange, includesLatest, rowsInRange, trainingDays, type DateRange } from '../lib/dateRange'
+import { useBandMetric } from '../hooks/useBandMetric'
 import { useVolumeGrain } from '../hooks/useVolumeGrain'
 import StatCards from './StatCards'
 import NextSession from './NextSession'
@@ -15,21 +16,26 @@ import ThemeSwitcher from './ThemeSwitcher'
 
 export default function Dashboard({ rows }: { rows: SetRow[] }) {
   const stats = useMemo(() => overallStats(rows), [rows])
-  const { metric: heatmapMetric, setMetric: setHeatmapMetric } = useHeatmapMetric()
+  const { metric: bandMetric, setMetric: setBandMetric } = useBandMetric()
   const { grain: volumeGrain, setGrain: setVolumeGrain } = useVolumeGrain()
 
-  // Make the next-session suggestion goal-aware against the recommended short-term
-  // target (due at the next calendar quarter-end). Computed once here, then passed to
-  // the chart and the card so their projection stays consistent.
-  const suggestions = useMemo(() => {
-    const target: Partial<Record<LiftKey, number>> = {}
-    for (const lift of LIFTS) {
-      target[lift.key] = recommendedGoals(rows, lift.key).short
-    }
-    const goalCtx: GoalContext = { target, weeksLeft: weeksUntil(quarterCheckpoints().horizonDate.short) }
-    // Real calendar "now" so the detraining back-off reflects an actual layoff.
-    return nextSessionSuggestion(rows, goalCtx, undefined, Date.now())
+  const days = useMemo(() => trainingDays(rows), [rows])
+  const [range, setRange] = useState<DateRange | null>(null)
+  const active = range ?? fullRange(days)
+
+  // The range filters CHARTS ONLY. The engine, the all-time records in the glance strip
+  // and the heatmap's colour cut points all keep reading full history, so narrowing the
+  // view can never change what you are told to lift.
+  const visible = useMemo(() => rowsInRange(rows, active), [rows, active])
+
+  const prescriptions = useMemo(() => {
+    const list = nextSession(rows)
+    return Object.fromEntries(list.map((p) => [p.lift, p])) as Record<LiftKey, Prescription>
   }, [rows])
+  const prescriptionList = useMemo<Prescription[]>(
+    () => Object.values(prescriptions),
+    [prescriptions],
+  )
 
   if (rows.length === 0) {
     return (
@@ -60,15 +66,26 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
 
         {/* TODAY */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <NextSession rows={rows} suggestions={suggestions} />
+          <NextSession rows={rows} prescriptions={prescriptionList} />
           <SessionLog rows={rows} />
         </div>
 
         {/* TREND */}
-        <ProgressChart rows={rows} suggestions={suggestions} />
+        {/* The span control lives inside this card, but drives all four charts. One control
+            rather than one per card: the charts count different things (training days, ISO
+            weeks, one lift's sessions), so per-card index sliders could never agree on a
+            period. Dates are the one unit they share. */}
+        <ProgressChart
+          rows={visible}
+          prescriptions={prescriptions}
+          showProjection={includesLatest(active, days)}
+          days={days}
+          range={active}
+          setRange={setRange}
+        />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <VolumeCard rows={rows} grain={volumeGrain} setGrain={setVolumeGrain} />
-          <FrequencyHeatmap rows={rows} metric={heatmapMetric} setMetric={setHeatmapMetric} />
+          <VolumeCard rows={visible} allRows={rows} grain={volumeGrain} setGrain={setVolumeGrain} />
+          <FrequencyHeatmap rows={visible} allRows={rows} metric={bandMetric} setMetric={setBandMetric} />
         </div>
       </div>
 
