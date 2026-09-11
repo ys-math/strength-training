@@ -23,7 +23,7 @@ what to lift next. Static site, no backend, free on GitHub Pages.
   unusually heavy?"*, against your trailing 6-session average).
 - **Training frequency** — a calendar heatmap, shaded by sets, tonnage, or the day's rep band.
 
-A **date range** in the header drives all four charts at once. It filters charts only: the next-session
+A **date range** under the top-set chart drives all four charts at once. It filters charts only: the next-session
 prescription, the all-time records and the heatmap's colour scale always read your full history, so
 narrowing the view can never change what you are told to lift.
 

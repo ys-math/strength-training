@@ -87,10 +87,10 @@ Never re-derive a band locally in a component, and never inline a band hex.
 ### Page layout — two zones
 
 ```
-DateRangePicker                    header, drives all four charts
 StatCards                          glance strip
 [ NextSession ‖ SessionLog ]       TODAY  — what to lift / what I lifted
 ProgressChart                      TREND  — All ▾ or a per-lift drill-down
+                                          — owns the span control, in both scopes
 [ VolumeCard ‖ FrequencyHeatmap ]  TREND
 ```
 
@@ -99,10 +99,14 @@ a separate "latest workout" card would render a second time. Don't add one.
 
 ### The date range
 
-**One global control in the header**, presets plus a two-handle track. It replaced three per-card
-index sliders, which counted different things (training days, ISO weeks, one lift's sessions) and
-so could never agree on a period. Dates are the one unit all four charts share. Don't re-add a
-per-card slider.
+**One control, presets plus a two-handle track**, rendered inside `ProgressChart` below the plot
+in *both* scopes — but owned by `Dashboard`, because it drives the volume and frequency cards too.
+A footnote under it says so; without that the cross-card effect is invisible.
+
+It replaced three per-card index sliders, which counted different things (training days, ISO
+weeks, one lift's sessions) and so could never agree on a period. Dates are the one unit all four
+charts share. Don't re-add a per-card slider, and don't move the state into `ProgressChart` —
+the other two cards need it.
 
 It filters **charts only** (`rowsInRange` in `Dashboard`). These always read full history:
 

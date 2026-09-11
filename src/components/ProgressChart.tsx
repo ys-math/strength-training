@@ -15,7 +15,9 @@ import { BAND_META, type Prescription } from '../lib/engine'
 import { fmtDate, fmtLongDate } from '../lib/format'
 import type { SetRow } from '../lib/types'
 import ChartCard from './ChartCard'
+import DateRangePicker from './DateRangePicker'
 import LiftDetailView from './LiftDetail'
+import type { DateRange } from '../lib/dateRange'
 
 // What the card plots: all four lifts against each other, or one lift in depth.
 type Scope = 'all' | LiftKey
@@ -180,13 +182,21 @@ export default function ProgressChart({
   rows,
   prescriptions,
   showProjection,
+  days,
+  range,
+  setRange,
 }: {
-  /** Already sliced to the header's date range. */
+  /** Already sliced to `range`. */
   rows: SetRow[]
   prescriptions: Record<LiftKey, Prescription>
   /** False when the range has been pulled back off the latest session, where a
    *  next-session projection would be drawn beyond the window's own right edge. */
   showProjection: boolean
+  /** The span control. It sits in this card but drives the volume and frequency cards too,
+   *  which is why it is owned by Dashboard rather than by local state here. */
+  days: string[]
+  range: DateRange
+  setRange: (r: DateRange) => void
 }) {
   // Each session's logged TOP SET — one rep band rather than whichever band the session
   // ran, so the line compares like with like. It still moves with the band, because the
@@ -357,6 +367,14 @@ export default function ProgressChart({
     </div>
   )
 
+
+  // Sits below the plot in both scopes, where the old per-card slider used to live.
+  const spanControl = (
+    <div className="mt-3 border-t pt-3" style={{ borderColor: 'var(--border)' }}>
+      <DateRangePicker days={days} range={range} setRange={setRange} />
+    </div>
+  )
+
   const title = detailLift ? `${detailLift.label} detail` : 'Top set lifted'
   const subtitle = detailLift
     ? 'Every set performed — block height is the weight, so a column is the session’s volume'
@@ -366,6 +384,7 @@ export default function ProgressChart({
     return (
       <ChartCard title={title} subtitle={subtitle} right={controls}>
         <LiftDetailView rows={rows} lift={detailLift.key} />
+        {spanControl}
       </ChartCard>
     )
   }
@@ -447,6 +466,12 @@ export default function ProgressChart({
           Dotted = the top set prescribed for your next session (see Next session).
         </p>
       )}
+
+      {spanControl}
+      <p className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+        Span drives the Volume and Training-frequency cards too. It never changes what Next session
+        tells you to lift.
+      </p>
     </ChartCard>
   )
 }

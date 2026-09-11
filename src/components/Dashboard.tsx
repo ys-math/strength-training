@@ -12,7 +12,6 @@ import SessionLog from './SessionLog'
 import ProgressChart from './ProgressChart'
 import VolumeCard from './VolumeCard'
 import FrequencyHeatmap from './FrequencyHeatmap'
-import DateRangePicker from './DateRangePicker'
 import ThemeSwitcher from './ThemeSwitcher'
 
 export default function Dashboard({ rows }: { rows: SetRow[] }) {
@@ -56,12 +55,6 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
           Bench · Squat · Deadlift · Overhead Press &nbsp;·&nbsp; {fmtLongDate(stats.firstDate)} –{' '}
           {fmtLongDate(stats.lastDate)}
         </p>
-        {/* One span control for the whole dashboard. It lives here rather than on each card
-            because the four charts count different things (training days, ISO weeks, one
-            lift's sessions) and per-card index sliders could never agree on a period. */}
-        <div className="mt-4">
-          <DateRangePicker days={days} range={active} setRange={setRange} />
-        </div>
       </header>
 
       {/* Two zones, in reading order. The glance strip answers "am I progressing" in a
@@ -78,10 +71,17 @@ export default function Dashboard({ rows }: { rows: SetRow[] }) {
         </div>
 
         {/* TREND */}
+        {/* The span control lives inside this card, but drives all four charts. One control
+            rather than one per card: the charts count different things (training days, ISO
+            weeks, one lift's sessions), so per-card index sliders could never agree on a
+            period. Dates are the one unit they share. */}
         <ProgressChart
           rows={visible}
           prescriptions={prescriptions}
           showProjection={includesLatest(active, days)}
+          days={days}
+          range={active}
+          setRange={setRange}
         />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <VolumeCard rows={visible} allRows={rows} grain={volumeGrain} setGrain={setVolumeGrain} />
