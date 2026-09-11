@@ -17,8 +17,8 @@ what to lift next. Static site, no backend, free on GitHub Pages.
 - **Next session** — per lift, 3 straight sets in a rep band plus 1 top set, with the session it
   progressed from. No warmup ramp; warmups are yours to judge.
 - **Session log** — every exercise, set, and volume per workout, latest already open.
-- **Top set lifted** — the headline chart, with an **All / BP / SQ / DL / OHP** scope selector. The
-  per-lift view drills into the individual sets you performed.
+- **Heaviest set lifted** — the headline chart, with an **All / BP / SQ / DL / OHP** scope
+  selector. The per-lift view drills into the individual sets you performed.
 - **Volume** — working tonnage, by week (*"am I doing enough?"*) or by session (*"was that day
   unusually heavy?"*, against your trailing 6-session average).
 - **Training frequency** — a calendar heatmap, shaded by sets, tonnage, or the day's rep band.

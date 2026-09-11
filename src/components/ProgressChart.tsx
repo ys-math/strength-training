@@ -10,7 +10,7 @@ import {
   YAxis,
 } from 'recharts'
 import { LIFT_BY_KEY, LIFTS, type LiftKey } from '../lib/types'
-import { topSetSeries, type TopSetPoint } from '../lib/metrics'
+import { sessionMaxSeries, type SessionMaxPoint } from '../lib/metrics'
 import { BAND_META, type Prescription } from '../lib/engine'
 import { fmtDate, fmtLongDate } from '../lib/format'
 import type { SetRow } from '../lib/types'
@@ -32,9 +32,9 @@ function topOf(p: Prescription): { load: number; reps: number } | null {
 }
 
 // One tooltip for the whole chart. On the synthetic projected column it lists each lift's
-// prescribed top set; on a real date it shows the top set logged that day, headed by the
-// day's band — that heading is what stops a planned volume day from reading as a collapse,
-// and it is the only place that answer appears on this card.
+// prescribed top set; on a real date it shows the heaviest set lifted that day, headed by
+// the day's band — that heading is what stops a planned volume day from reading as a
+// collapse, and it is the only place that answer appears on this card.
 // Projection series (dataKeys ending "__p") never surface as their own rows.
 function ProgressTooltip({
   active,
@@ -74,7 +74,7 @@ function ProgressTooltip({
 
   const items = payload.filter((p) => p.value != null && !String(p.dataKey).endsWith('__p'))
   if (items.length === 0) return null
-  const band = (row as unknown as TopSetPoint).band
+  const band = (row as unknown as SessionMaxPoint).band
   return (
     <div className={tipClass} style={tipStyle}>
       <div className="mb-1 font-medium" style={{ color: 'var(--text-secondary)' }}>
@@ -83,7 +83,7 @@ function ProgressTooltip({
       </div>
       {items.map((p) => {
         const key = p.dataKey as LiftKey
-        const d = (p.payload as TopSetPoint).detail?.[key]
+        const d = (p.payload as SessionMaxPoint).detail?.[key]
         return (
           <div key={key} className="flex items-center gap-2 py-0.5">
             <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: p.color }} />
@@ -121,10 +121,11 @@ function makeEndLabel(lastIndex: number, color: string, text: string, dyExtra: n
 
 // Two dots in one renderer, because they answer two different questions.
 //
-// The plain dot marks a session this lift logged a top set. That is not decoration: the
-// x-axis has one slot per training day that produced any top set, so a lift without one
-// that day is `undefined` and `connectNulls` bridges straight over it. Without dots the
-// bridge is drawn identically to real data.
+// The plain dot marks a session this lift was actually trained. That is not decoration:
+// the x-axis has one slot per training day for ANY big-four lift, so a lift not trained
+// that day is `undefined` and `connectNulls` bridges straight over it. Overhead press is
+// logged on 30 of 55 days, so nearly half its line is drawn through. Without dots that
+// bridge looks identical to measured data.
 //
 // The haloed dot marks a session where the record actually advanced. The line rises and
 // falls with the band, so dotting every up-tick would call a rebound off a volume day a
@@ -133,7 +134,7 @@ function makeEndLabel(lastIndex: number, color: string, text: string, dyExtra: n
 //
 // The two must not be told apart by fill alone — at 4 lines they'd blur. A PR is bigger
 // AND carries a `--surface-1` ring that punches a gap out of the line behind it.
-function makeSessionDot(key: LiftKey, all: readonly TopSetPoint[], color: string) {
+function makeSessionDot(key: LiftKey, all: readonly SessionMaxPoint[], color: string) {
   return function SessionDot(props: { cx?: number; cy?: number; index?: number }) {
     if (props.index == null || props.cx == null || props.cy == null) return null
     const d = all[props.index]?.detail?.[key]
@@ -198,11 +199,12 @@ export default function ProgressChart({
   range: DateRange
   setRange: (r: DateRange) => void
 }) {
-  // Each session's logged TOP SET — one rep band rather than whichever band the session
-  // ran, so the line compares like with like. It still moves with the band, because the
-  // top set is derived from the band's load; the tooltip names the band so a dip reads as
-  // a volume day rather than as lost strength.
-  const { series: data, records } = useMemo(() => topSetSeries(rows), [rows])
+  // Each session's HEAVIEST working set — the weight actually lifted that day. Every
+  // session a lift was trained gets a point, so the line is as dense as the training. It
+  // moves with the band, and it is the top set on a day that logged one and the working
+  // load otherwise; the tooltip names the band so a dip reads as a volume day rather than
+  // as lost strength.
+  const { series: data, records } = useMemo(() => sessionMaxSeries(rows), [rows])
   const [hidden, setHidden] = useState<Set<LiftKey>>(new Set())
   const [scope, setScope] = useState<Scope>('all')
 
@@ -375,10 +377,10 @@ export default function ProgressChart({
     </div>
   )
 
-  const title = detailLift ? `${detailLift.label} detail` : 'Top set lifted'
+  const title = detailLift ? `${detailLift.label} detail` : 'Heaviest set lifted'
   const subtitle = detailLift
     ? 'Every set performed — block height is the weight, so a column is the session’s volume'
-    : 'The heavy top set each session, per lift — actual weight, never an estimate'
+    : 'The heaviest working set each session, per lift — actual weight, never an estimate'
 
   if (detailLift) {
     return (
@@ -456,9 +458,9 @@ export default function ProgressChart({
 
       {/* The chart's one hazard, stated where it's read. */}
       <p className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-        The top set follows the day’s band, so a dip is usually a volume day rather than lost
-        strength. A dot = a session with a logged top set; a ringed dot = a new record. Between
-        dots the line is drawn through, not measured.
+        The heaviest set follows the day’s band, so a dip is usually a volume day rather than lost
+        strength. A dot = a session that lift was trained; a ringed dot = a new record. Between dots
+        the line is drawn through, not measured.
       </p>
 
       {projected && (

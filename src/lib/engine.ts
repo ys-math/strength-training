@@ -102,8 +102,13 @@ export interface DayWork {
   /** Band this session is filed under. */
   band: RepBand
   /** Heaviest set logged above the modal load, if any. Not used to prescribe — the top
-   *  set is derived — but the trend chart plots it. */
+   *  set is derived — but it is what makes a day's `heaviest` a top set rather than the
+   *  working load. */
   topSet: { weight: number; reps: number } | null
+  /** Heaviest working set of the day, warmups excluded. Equals `topSet` on a day that
+   *  logged one and the modal load otherwise, so every trained session has a value. This
+   *  is what the trend chart plots. */
+  heaviest: { weight: number; reps: number }
 }
 
 /**
@@ -144,6 +149,14 @@ export function liftDays(rows: SetRow[], lift: LiftKey): DayWork[] {
       topSet = { weight, reps: Math.max(...above.filter((s) => s.weight === weight).map((s) => s.reps)) }
     }
 
+    // Taken over every working set, not just the modal load and the top set: a ramp-up can
+    // leave the day's heaviest set somewhere in between.
+    const heaviestWeight = Math.max(...sets.map((s) => s.weight))
+    const heaviest = {
+      weight: heaviestWeight,
+      reps: Math.max(...sets.filter((s) => s.weight === heaviestWeight).map((s) => s.reps)),
+    }
+
     const achieved = achievedReps(reps)
     days.push({
       dateKey,
@@ -154,6 +167,7 @@ export function liftDays(rows: SetRow[], lift: LiftKey): DayWork[] {
       sets: reps.length,
       band: bandOf(achieved),
       topSet,
+      heaviest,
     })
   }
 

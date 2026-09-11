@@ -151,17 +151,19 @@ export function cumulativeSeries(rows: SetRow[]): BestToDatePoint[] {
   return series
 }
 
-// ---- Top-set trend (the main ProgressChart) ----------------------------------
+// ---- Session-max trend (the main ProgressChart) -------------------------------
 
-// Each lift's logged TOP SET per training day: the heaviest set above that day's straight
-// sets. One rep band (1-2) rather than whichever band the session ran, so the line
-// compares like with like instead of dropping 20 kg because the day was a volume day.
+// Each lift's HEAVIEST WORKING SET per training day — the weight actually lifted that
+// session, warmups excluded. Every session a lift was trained has a value, so the line is
+// as dense as the training: overhead press logged only 2 top sets in five months but was
+// trained on 30 days.
 //
-// It still moves with the band, because the top set is derived from the band's load and
-// the factors don't fully compensate (squat swings ~17.5 kg across bands). `band` heads
-// the tooltip so a dip reads as a band change, and `records` feeds the legend, which must
-// show the all-time PR — the line no longer guarantees its own highest point is one.
-export interface TopSetPoint {
+// The cost of that density is that the line mixes two quantities: it is the top set on a
+// day that logged one and the working load otherwise, and it moves with the band either
+// way. `band` heads the tooltip so a dip reads as a band change rather than lost strength,
+// and `records` feeds the legend, which must show the record — the line's own last point
+// is not guaranteed to be one.
+export interface SessionMaxPoint {
   dateKey: string
   ts: number
   band?: RepBand
@@ -172,25 +174,24 @@ export interface TopSetPoint {
   detail: Partial<Record<LiftKey, { reps: number; isPR: boolean }>>
 }
 
-export function topSetSeries(rows: SetRow[]): { series: TopSetPoint[]; records: Record<LiftKey, number> } {
+export function sessionMaxSeries(rows: SetRow[]): { series: SessionMaxPoint[]; records: Record<LiftKey, number> } {
   const byLiftDate = new Map<string, { weight: number; reps: number }>()
   const bandByDate = new Map<string, RepBand>()
   const dates = new Set<string>()
 
   for (const lift of LIFTS) {
     for (const day of liftDays(rows, lift.key)) {
-      if (!day.topSet) continue
-      byLiftDate.set(`${lift.key}|${day.dateKey}`, day.topSet)
+      byLiftDate.set(`${lift.key}|${day.dateKey}`, day.heaviest)
       dates.add(day.dateKey)
     }
   }
   for (const [dateKey, d] of dayBandMap(rows)) bandByDate.set(dateKey, d.band)
 
   const records: Record<LiftKey, number> = { BP: 0, SQ: 0, DL: 0, OHP: 0 }
-  const series: TopSetPoint[] = []
+  const series: SessionMaxPoint[] = []
 
   for (const dateKey of [...dates].sort()) {
-    const point: TopSetPoint = { dateKey, ts: new Date(dateKey).getTime(), band: bandByDate.get(dateKey), detail: {} }
+    const point: SessionMaxPoint = { dateKey, ts: new Date(dateKey).getTime(), band: bandByDate.get(dateKey), detail: {} }
     for (const lift of LIFTS) {
       const t = byLiftDate.get(`${lift.key}|${dateKey}`)
       if (!t || t.weight <= 0) continue

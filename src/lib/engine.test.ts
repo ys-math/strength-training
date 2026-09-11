@@ -92,6 +92,32 @@ describe('liftDays — reading a messy log', () => {
     expect(liftDays(day('2026-09-08', 'SQ', 60, 5), 'SQ')[0].topSet).toBeNull()
   })
 
+  // What the trend chart plots. It falls back to the working load so every trained session
+  // has a point, which matters most for overhead press: 30 sessions, only 2 top sets.
+  it('always has a heaviest working set, top set or not', () => {
+    const withTop = [...day('2026-09-08', 'BP', 60, 10), set('2026-09-08', 'BP', 70, 2)]
+    expect(liftDays(withTop, 'BP')[0].heaviest).toEqual({ weight: 70, reps: 2 })
+
+    const without = day('2026-09-08', 'SQ', 60, 5)
+    expect(liftDays(without, 'SQ')[0].heaviest).toEqual({ weight: 60, reps: 5 })
+  })
+
+  it('finds a heaviest set that is neither the modal load nor the top set', () => {
+    // Apr 25 squat ramps 40 -> 50 -> 60; the modal load is 50 and the heaviest is 60.
+    const rows = [
+      set('2026-04-25', 'SQ', 40, 12),
+      set('2026-04-25', 'SQ', 50, 10),
+      set('2026-04-25', 'SQ', 50, 10),
+      set('2026-04-25', 'SQ', 60, 8),
+    ]
+    expect(liftDays(rows, 'SQ')[0].heaviest).toEqual({ weight: 60, reps: 8 })
+  })
+
+  it('never lets a warmup be the heaviest set', () => {
+    const rows = [set('2026-06-04', 'SQ', 95, 1, true), ...day('2026-06-04', 'SQ', 80, 5)]
+    expect(liftDays(rows, 'SQ')[0].heaviest.weight).toBe(80)
+  })
+
   // Warmups are excluded everywhere in the engine. Two real squat days logged warmups only.
   it('excludes warmups from the straight sets', () => {
     const rows = [

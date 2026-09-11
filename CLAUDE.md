@@ -120,23 +120,30 @@ It filters **charts only** (`rowsInRange` in `Dashboard`). These always read ful
 `ProgressChart` takes `showProjection`, false once the range is pulled back off the latest
 session, because the dashed next-session point would otherwise sit beyond the window's own edge.
 
-### Trend chart (`topSetSeries` → `ProgressChart`)
+### Trend chart (`sessionMaxSeries` → `ProgressChart`)
 
-Plots each session's **logged top set**, one rep band rather than whichever band the session ran.
-It still moves with the band, because the top set is derived from the band load and the factors
-don't fully compensate — squat swings ~17.5 kg across bands. Three things keep that legible:
+Plots each session's **heaviest working set**, warmups excluded — the weight actually lifted that
+day. Every session a lift was trained has a point, so the line is as dense as the training: this
+replaced a logged-top-set series where overhead press had 2 points in five months.
+
+The cost is that it mixes two quantities — the top set on a day that logged one, the working load
+otherwise — and it moves with the band either way. Three things keep that legible:
 
 - **`band`** heads the tooltip, so a dip reads as a volume day rather than lost strength;
 - **`isPR`** is a running max over the series, not a comparison with the previous point — on a
   line that descends those differ, and the latter would dot every rebound;
 - **`records`** feeds the legend chips, which must show the record, not the last point.
 
-**`makeSessionDot` draws two dots and the plain one is not decoration.** A lift with no top set
-that day is `undefined` and `connectNulls` bridges straight over it, drawing interpolation
-identically to measured data. That is not a rare edge: overhead press logged only 2 top sets in
-five months, so its line is almost entirely drawn through. The two dots must differ by **size +
-ring, not fill alone**. Don't dot the bridged points "for consistency" — the gap *is* the
-information.
+Don't swap it back to a top-set-only series, and don't take the max from `liftSessions.maxWeight`
+— that counts warmups, and two squat days logged warmups only, which would plot as fake 50/60 kg
+points. `DayWork.heaviest` is the guarded version.
+
+**`makeSessionDot` draws two dots and the plain one is not decoration.** The x-axis has one slot
+per training day for *any* big-four lift, so a lift not trained that day is `undefined` and
+`connectNulls` bridges straight over it, drawing interpolation identically to measured data.
+Overhead press is logged on 30 of 55 days, so nearly half its line is drawn through. The two dots
+must differ by **size + ring, not fill alone**. Don't dot the bridged points "for consistency" —
+the gap *is* the information.
 
 `ProgressChart` appends a dashed `${key}__p` projection to a synthetic future date, plotting the
 prescribed top set; tooltips ignore any `__p` dataKey. It draws **whether it rises or falls** — a
