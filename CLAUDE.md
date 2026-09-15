@@ -53,27 +53,29 @@ strong_workouts.csv ?raw
 ### The engine
 
 Documented in full in `docs/METHOD.md` — read that before changing a rule. In short: three rep
-bands (`heavy 3-5`, `moderate 6-9`, `volume 10-12`) plus a derived 2-rep top set; one
-progression track per lift per band, twelve in all; the rotation is `heavy → volume → moderate`,
-**per lift**, read off that lift's own last session. One rule advances a track: an unfinished
+bands (`heavy 3-5`, `moderate 6-9`, `volume 10-12`); one progression track per lift per band,
+twelve in all; the rotation is `heavy → volume → moderate`, **per lift**, read off that lift's own
+last session. One rule advances a track: an unfinished
 session repeats, a session at the top of its band earns 2.5 kg at the bottom of the band,
 anything else adds a rep.
 
 Load-bearing details, each of which has already been got wrong once:
 
-- **The straight sets are the modal load**, taken positively rather than by discarding a set
-  guessed to be the top one. The export has no top-set marker (`Set Order` is just 1,2,3,4), so
-  shape is all there is. 57 of 181 lift-days have mixed loads; the modal load is what survives
+- **The straight sets are the modal load**, taken positively rather than by discarding the
+  heaviest set as an outlier. The export marks nothing but warmups (`Set Order` is just 1,2,3,4),
+  so shape is all there is. 57 of 181 lift-days have mixed loads; the modal load is what survives
   ramp-ups and drop-off sets.
 - **`round(mean(reps))` does both jobs** — it labels the band and it counts what you achieved.
   `floor` was tried and misfiles 8 of 181 days, including a 65 kg squat session into the heavy
   track beside real 80 kg work. Don't split it back into two statistics without a reason.
-- **Counts outside 3-12 clamp**, so a near-max day of doubles reads as heavy. `top` is not a
-  rotation state; four real days would otherwise fall out of the cycle entirely.
+- **Counts outside 3-12 clamp**, so a near-max day of doubles reads as heavy. There is no band
+  below heavy; four real days would otherwise fall out of the cycle entirely.
 - **The unfinished check is what makes "3 sets" mean something.** Without it the shape is
   presentation only, and 29 of 181 lift-days would advance the load off two sets.
-- **The top set's floor is not paranoia.** The heavy factor is 1.05×, which snaps back onto the
-  straight-set load at 20 and 22.5 kg — both reachable by overhead press.
+- **A prescription is one load and one rep count, for three sets — nothing more.** A derived
+  2-rep top set (`TOP_FACTOR`, `topSetLoad`, a `kind` on `PlanSet`) was removed deliberately: it
+  was a second number the log never confirmed, needed a floor to stop it printing a fourth
+  identical set, and split every call site into "which set do I mean". Don't reintroduce it.
 - **No estimate, anywhere.** `epley()`, `e1rm`, goals and deload were all deleted. A band with
   no history prints no number rather than seeding one from a neighbour. Don't reintroduce an
   estimate to fill a gap.
@@ -138,17 +140,17 @@ Plots each session's **heaviest working set**, warmups excluded — the weight a
 day. Every session a lift was trained has a point, so the line is as dense as the training: this
 replaced a logged-top-set series where overhead press had 2 points in five months.
 
-The cost is that it mixes two quantities — the top set on a day that logged one, the working load
-otherwise — and it moves with the band either way. Three things keep that legible:
+The cost is that it moves with the band — a heavy single and a light set of twelve both plot at the
+weight on the bar. Three things keep that legible:
 
 - **`band`** heads the tooltip, so a dip reads as a volume day rather than lost strength;
 - **`isPR`** is a running max over the series, not a comparison with the previous point — on a
   line that descends those differ, and the latter would dot every rebound;
 - **`records`** feeds the legend chips, which must show the record, not the last point.
 
-Don't swap it back to a top-set-only series, and don't take the max from `liftSessions.maxWeight`
-— that counts warmups, and two squat days logged warmups only, which would plot as fake 50/60 kg
-points. `DayWork.heaviest` is the guarded version.
+Don't swap it back to a logged-top-set-only series, and don't take the max from
+`liftSessions.maxWeight` — that counts warmups, and two squat days logged warmups only, which would
+plot as fake 50/60 kg points. `DayWork.heaviest` is the guarded version.
 
 **`makeSessionDot` draws two dots and the plain one is not decoration.** The x-axis has one slot
 per training day for *any* big-four lift, so a lift not trained that day is `undefined` and
@@ -158,8 +160,8 @@ must differ by **size + ring, not fill alone**. Don't dot the bridged points "fo
 the gap *is* the information.
 
 `ProgressChart` appends a dashed `${key}__p` projection to a synthetic future date, plotting the
-prescribed top set; tooltips ignore any `__p` dataKey. It draws **whether it rises or falls** — a
-lighter next session is a real prediction and this axis can say so.
+prescribed straight-set load; tooltips ignore any `__p` dataKey. It draws **whether it rises or
+falls** — a lighter next session is a real prediction and this axis can say so.
 
 ### Progress scope (`ProgressChart` ⊃ `LiftDetail`)
 

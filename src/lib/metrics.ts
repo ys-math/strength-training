@@ -155,14 +155,13 @@ export function cumulativeSeries(rows: SetRow[]): BestToDatePoint[] {
 
 // Each lift's HEAVIEST WORKING SET per training day — the weight actually lifted that
 // session, warmups excluded. Every session a lift was trained has a value, so the line is
-// as dense as the training: overhead press logged only 2 top sets in five months but was
-// trained on 30 days.
+// as dense as the training: overhead press logged a set above its working load on only 2
+// days in five months but was trained on 30.
 //
-// The cost of that density is that the line mixes two quantities: it is the top set on a
-// day that logged one and the working load otherwise, and it moves with the band either
-// way. `band` heads the tooltip so a dip reads as a band change rather than lost strength,
-// and `records` feeds the legend, which must show the record — the line's own last point
-// is not guaranteed to be one.
+// The cost of that density is that the line moves with the band — a heavy single and a
+// light set of twelve both plot at the weight on the bar. `band` heads the tooltip so a dip
+// reads as a band change rather than lost strength, and `records` feeds the legend, which
+// must show the record — the line's own last point is not guaranteed to be one.
 export interface SessionMaxPoint {
   dateKey: string
   ts: number

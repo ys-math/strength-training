@@ -78,10 +78,10 @@ describe('liftSetSeries — the set-block chart', () => {
     expect(day.sets).toEqual([{ weight: 90, reps: 5, volume: 450 }])
   })
 
-  // A session's sets are not uniform — the engine prescribes a heavy top set after the
-  // working sets — and every one of them is its own tray with its own block height.
+  // A session's sets are not uniform — a logged day often ends on a heavier single or two —
+  // and every one of them is its own tray with its own block height.
   it('keeps a mixed-load session as separate sets, in performed order', () => {
-    // The real Jul 5 bench session: 57.5×5 ×3, then a 62.5×2 top set.
+    // The real Jul 5 bench session: 57.5×5 ×3, then a heavier 62.5×2.
     const rows = [...session('2026-07-05', 'BP', 57.5, 5), set('2026-07-05', 'BP', 62.5, 2)]
     const [day] = liftSetSeries(rows, 'BP')
 

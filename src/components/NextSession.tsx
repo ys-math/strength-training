@@ -38,34 +38,19 @@ function BandChip({ band }: { band: Prescription['band'] }) {
   )
 }
 
-// The set pills for one lift, in execution order: three straight sets, then the top set.
-// No warmup ramp — warmups are yours to judge and never enter the engine.
-function PlanChips({ p }: { p: Prescription }) {
-  // groupSets speaks {weight, reps}; the engine speaks {load, reps}. One straight entry
+// The set pills for one lift: three straight sets at one load. No warmup ramp — warmups
+// are yours to judge and never enter the engine.
+function PlanChips({ plan }: { plan: PlanSet }) {
+  // groupSets speaks {weight, reps}; the engine speaks {load, reps}. The one plan entry
   // stands for all three sets, so it is repeated before grouping collapses it to "×3".
-  const chips = (kind: PlanSet['kind'], repeat: number) =>
-    groupSets(
-      p.plan
-        .filter((s) => s.kind === kind)
-        .flatMap((s) => Array.from({ length: repeat }, () => ({ weight: s.load, reps: s.reps }))),
-    )
-  const straight = chips('straight', 3)
-  const top = chips('top', 1)
+  const chips = groupSets(
+    Array.from({ length: 3 }, () => ({ weight: plan.load, reps: plan.reps })),
+  )
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-      {straight.map((g, i) => (
+      {chips.map((g, i) => (
         <SetChip key={`s${i}`} g={g} />
       ))}
-      {top.length > 0 && (
-        <>
-          <span className="mx-0.5 text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-            top
-          </span>
-          {top.map((g, i) => (
-            <SetChip key={`t${i}`} g={g} />
-          ))}
-        </>
-      )}
     </div>
   )
 }
@@ -94,7 +79,7 @@ export default function NextSession({
   const today = latestDateKey(rows)
 
   return (
-    <ChartCard title="Next session" subtitle="3 straight sets then 1 top set, per lift">
+    <ChartCard title="Next session" subtitle="3 straight sets in a rep band, per lift">
       <div className="space-y-2">
         {prescriptions.map((p) => {
           const lift = LIFT_BY_KEY.get(p.lift)
@@ -129,14 +114,14 @@ export default function NextSession({
                 </div>
               </div>
 
-              {p.rule === 'no-history' ? (
+              {!p.plan ? (
                 <div className="mt-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                   No {BAND_META[p.band].label.toLowerCase()} history yet. Log one session and it starts
                   tracking.
                 </div>
               ) : (
                 <>
-                  <PlanChips p={p} />
+                  <PlanChips plan={p.plan} />
                   <div className="mt-1 flex items-center gap-1.5">
                     <Reference p={p} today={today} />
                     {stale && (
@@ -154,8 +139,8 @@ export default function NextSession({
 
       <p className="mt-4 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
         Each lift rotates heavy → volume → moderate and progresses off its own last session in that
-        band: complete three sets at the top of the band to earn 2.5 kg, otherwise add a rep. The top
-        set follows from the load. Full rules in docs/METHOD.md.
+        band: complete three sets at the top of the band to earn 2.5 kg, otherwise add a rep. Full
+        rules in docs/METHOD.md.
       </p>
     </ChartCard>
   )

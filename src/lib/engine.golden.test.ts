@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { parseWorkouts } from './parse'
-import { BAND_CYCLE, liftTracks, nextSession, type RepBand } from './engine'
+import { BANDS, BAND_CYCLE, liftTracks, nextSession, type RepBand } from './engine'
 import { LIFTS } from './types'
 
 // A frozen copy of the real export, taken 2026-09-11. It is deliberately NOT the live
@@ -52,23 +52,20 @@ describe('the whole engine, over the frozen export', () => {
 
   it('prescribes the next session for every lift', () => {
     const lines = nextSession(rows).map((p) => {
-      const straight = p.plan.find((s) => s.kind === 'straight')
-      const top = p.plan.find((s) => s.kind === 'top')
-      if (!straight || !top) return `${p.lift.padEnd(4)} ${p.band.padEnd(9)} no history`
+      if (!p.plan) return `${p.lift.padEnd(4)} ${p.band.padEnd(9)} no history`
       return [
         p.lift.padEnd(4),
         `${p.lastBand} → ${p.band}`.padEnd(22),
-        `3 x ${fmt(straight.load).padStart(5)} x ${String(straight.reps).padStart(2)}`,
-        `1 x ${fmt(top.load).padStart(5)} x ${top.reps}`,
+        `3 x ${fmt(p.plan.load).padStart(5)} x ${String(p.plan.reps).padStart(2)}`,
         p.rule.padEnd(8),
         `from ${p.reference?.dateKey}`,
       ].join('  ')
     })
     expect(lines.join('\n')).toMatchInlineSnapshot(`
-      "BP    volume → moderate       3 x  65.0 x  7  1 x  72.5 x 2  rep-up    from 2026-09-02
-      SQ    heavy → volume          3 x  65.0 x 12  1 x  77.5 x 2  rep-up    from 2026-08-07
-      DL    heavy → volume          3 x  72.5 x 10  1 x  85.0 x 2  load-up   from 2026-08-07
-      OHP   heavy → volume          3 x  22.5 x 11  1 x  27.5 x 2  rep-up    from 2026-08-07"
+      "BP    volume → moderate       3 x  65.0 x  7  rep-up    from 2026-09-02
+      SQ    heavy → volume          3 x  65.0 x 12  rep-up    from 2026-08-07
+      DL    heavy → volume          3 x  72.5 x 10  load-up   from 2026-08-07
+      OHP   heavy → volume          3 x  22.5 x 11  rep-up    from 2026-08-07"
     `)
   })
 
@@ -76,13 +73,11 @@ describe('the whole engine, over the frozen export', () => {
   // let a broken rule through alongside a plausible-looking snapshot.
   it('always prescribes loadable weights inside the band', () => {
     for (const p of nextSession(rows)) {
-      const straight = p.plan.find((s) => s.kind === 'straight')
-      const top = p.plan.find((s) => s.kind === 'top')
-      if (!straight || !top) continue
-      expect(straight.load % 2.5).toBe(0)
-      expect(top.load % 2.5).toBe(0)
-      expect(top.load).toBeGreaterThan(straight.load)
-      expect(top.reps).toBe(2)
+      if (!p.plan) continue
+      const [lo, hi] = BANDS[p.band]
+      expect(p.plan.load % 2.5).toBe(0)
+      expect(p.plan.reps).toBeGreaterThanOrEqual(lo)
+      expect(p.plan.reps).toBeLessThanOrEqual(hi)
       expect(BAND_CYCLE).toContain(p.band)
     }
   })

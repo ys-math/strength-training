@@ -25,15 +25,9 @@ type Scope = 'all' | LiftKey
 const tipClass = 'rounded-lg px-3 py-2 text-xs shadow-lg'
 const tipStyle = { background: 'var(--page)', border: '1px solid var(--border)', color: 'var(--text-primary)' }
 
-/** The top set a prescription asks for, or null when the band has no history. */
-function topOf(p: Prescription): { load: number; reps: number } | null {
-  const set = p.plan.find((s) => s.kind === 'top')
-  return set ? { load: set.load, reps: set.reps } : null
-}
-
 // One tooltip for the whole chart. On the synthetic projected column it lists each lift's
-// prescribed top set; on a real date it shows the heaviest set lifted that day, headed by
-// the day's band — that heading is what stops a planned volume day from reading as a
+// prescribed straight sets; on a real date it shows the heaviest set lifted that day, headed
+// by the day's band — that heading is what stops a planned volume day from reading as a
 // collapse, and it is the only place that answer appears on this card.
 // Projection series (dataKeys ending "__p") never surface as their own rows.
 function ProgressTooltip({
@@ -51,18 +45,18 @@ function ProgressTooltip({
     return (
       <div className={tipClass} style={tipStyle}>
         <div className="mb-1 font-medium" style={{ color: 'var(--text-secondary)' }}>
-          Next session · prescribed top set
+          Next session · prescribed sets
         </div>
         {items.map((l) => {
           const p = prescriptions[l.key]
-          const top = topOf(p)
-          if (!top) return null
+          const plan = p.plan
+          if (!plan) return null
           return (
             <div key={l.key} className="flex items-center gap-2 py-0.5">
               <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: l.color }} />
               <span style={{ color: 'var(--text-muted)' }}>{l.label}</span>
               <span className="ml-auto tabular-nums font-medium">
-                {top.load} kg × {top.reps}
+                {plan.load} kg × {plan.reps}
                 <span style={{ color: 'var(--text-muted)' }}> · {BAND_META[p.band].label.toLowerCase()} day</span>
               </span>
             </div>
@@ -129,8 +123,8 @@ function makeEndLabel(lastIndex: number, color: string, text: string, dyExtra: n
 //
 // The haloed dot marks a session where the record actually advanced. The line rises and
 // falls with the band, so dotting every up-tick would call a rebound off a volume day a
-// PR. `isPR` is therefore a running max over the full history, decided in `topSetSeries`,
-// not by comparing neighbouring points here.
+// PR. `isPR` is therefore a running max over the full history, decided in
+// `sessionMaxSeries`, not by comparing neighbouring points here.
 //
 // The two must not be told apart by fill alone — at 4 lines they'd blur. A PR is bigger
 // AND carries a `--surface-1` ring that punches a gap out of the line behind it.
@@ -201,9 +195,9 @@ export default function ProgressChart({
 }) {
   // Each session's HEAVIEST working set — the weight actually lifted that day. Every
   // session a lift was trained gets a point, so the line is as dense as the training. It
-  // moves with the band, and it is the top set on a day that logged one and the working
-  // load otherwise; the tooltip names the band so a dip reads as a volume day rather than
-  // as lost strength.
+  // moves with the band — a heavy single and a light set of twelve are both plotted at the
+  // weight on the bar — so the tooltip names the band, and a dip reads as a volume day
+  // rather than as lost strength.
   const { series: data, records } = useMemo(() => sessionMaxSeries(rows), [rows])
   const [hidden, setHidden] = useState<Set<LiftKey>>(new Set())
   const [scope, setScope] = useState<Scope>('all')
@@ -221,13 +215,13 @@ export default function ProgressChart({
     return map
   }, [data])
 
-  // The prescribed top set, drawn whether it rises or falls. A lighter next session is a
-  // real prediction under this program and the axis can say so.
+  // The prescribed straight-set load, drawn whether it rises or falls. A lighter next
+  // session is a real prediction under this program and the axis can say so.
   const projValue = (key: LiftKey): number | null =>
-    showProjection ? (topOf(prescriptions[key])?.load ?? null) : null
+    showProjection ? (prescriptions[key].plan?.load ?? null) : null
 
   // Chart data with a synthetic future column: each lift's dashed `${key}__p` series
-  // runs from its last real value to the prescribed next-session top set.
+  // runs from its last real value to the prescribed next-session load.
   const { chartData, projected } = useMemo(() => {
     type Row = Record<string, number | string | boolean | undefined>
     const base = data as unknown as Row[]
@@ -465,7 +459,7 @@ export default function ProgressChart({
 
       {projected && (
         <p className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-          Dotted = the top set prescribed for your next session (see Next session).
+          Dotted = the load prescribed for your next session (see Next session).
         </p>
       )}
 

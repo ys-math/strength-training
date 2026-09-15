@@ -1,7 +1,7 @@
 // The entire next-session algorithm. Read this file top to bottom and you know the
 // system: there is nothing else. Rationale and a worked example live in docs/METHOD.md.
 //
-// Shape of one session, per lift: 3 straight sets in a rep band, then 1 top set.
+// Shape of one session, per lift: 3 straight sets in a rep band.
 // Warmups are never part of a prescription and never enter any calculation here.
 import { LIFTS, type LiftKey, type SetRow } from './types'
 
@@ -19,17 +19,6 @@ export const BANDS: Record<RepBand, [number, number]> = {
 
 /** Rotation order. Chosen for contrast: no two adjacent bands ever run back to back. */
 export const BAND_CYCLE: RepBand[] = ['heavy', 'volume', 'moderate']
-
-/**
- * The top set sits above the straight sets by a band-dependent factor: the straight
- * sets are treated as that fraction of the top set, so `top = load / factor`. A volume
- * day's straight sets are further below its top set than a heavy day's are.
- */
-export const TOP_FACTOR: Record<RepBand, number> = {
-  heavy: 0.95,
-  moderate: 0.9,
-  volume: 0.85,
-}
 
 /** Labels and one-line intents, so no component invents its own wording. */
 export const BAND_META: Record<RepBand, { label: string; intent: string }> = {
@@ -50,14 +39,11 @@ export interface EngineConfig {
   increment: number
   /** Straight sets in a complete session. Fewer than this means unfinished. */
   straightSets: number
-  /** Reps in the top set. Fixed. */
-  topReps: number
 }
 
 export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   increment: 2.5,
   straightSets: 3,
-  topReps: 2,
 }
 
 // ---- Reading history ---------------------------------------------------------
@@ -101,22 +87,18 @@ export interface DayWork {
   sets: number
   /** Band this session is filed under. */
   band: RepBand
-  /** Heaviest set logged above the modal load, if any. Not used to prescribe — the top
-   *  set is derived — but it is what makes a day's `heaviest` a top set rather than the
-   *  working load. */
-  topSet: { weight: number; reps: number } | null
-  /** Heaviest working set of the day, warmups excluded. Equals `topSet` on a day that
-   *  logged one and the modal load otherwise, so every trained session has a value. This
-   *  is what the trend chart plots. */
+  /** Heaviest working set of the day, warmups excluded. Equals the modal load unless
+   *  something heavier was logged, so every trained session has a value. This is what the
+   *  trend chart plots. */
   heaviest: { weight: number; reps: number }
 }
 
 /**
  * A lift's whole history as one entry per training day, oldest first.
  *
- * The straight sets are taken *positively* as the modal load rather than by discarding a
- * set guessed to be the top one: the Strong export carries no top-set marker, so shape is
- * all there is, and the modal load is what survives contact with ramp-ups and drop-offs.
+ * The straight sets are taken *positively* as the modal load rather than by discarding the
+ * heaviest set as an outlier: the Strong export marks nothing but warmups, so shape is all
+ * there is, and the modal load is what survives contact with ramp-ups and drop-offs.
  */
 export function liftDays(rows: SetRow[], lift: LiftKey): DayWork[] {
   const byDate = new Map<string, SetRow[]>()
@@ -142,15 +124,9 @@ export function liftDays(rows: SetRow[], lift: LiftKey): DayWork[] {
     }
 
     const reps = sets.filter((s) => s.weight === load).map((s) => s.reps)
-    const above = sets.filter((s) => s.weight > load)
-    let topSet: DayWork['topSet'] = null
-    if (above.length > 0) {
-      const weight = Math.max(...above.map((s) => s.weight))
-      topSet = { weight, reps: Math.max(...above.filter((s) => s.weight === weight).map((s) => s.reps)) }
-    }
 
-    // Taken over every working set, not just the modal load and the top set: a ramp-up can
-    // leave the day's heaviest set somewhere in between.
+    // Taken over every working set, not just the modal load: a ramp-up can leave the day's
+    // heaviest set somewhere in between.
     const heaviestWeight = Math.max(...sets.map((s) => s.weight))
     const heaviest = {
       weight: heaviestWeight,
@@ -166,7 +142,6 @@ export function liftDays(rows: SetRow[], lift: LiftKey): DayWork[] {
       achieved,
       sets: reps.length,
       band: bandOf(achieved),
-      topSet,
       heaviest,
     })
   }
@@ -195,8 +170,8 @@ export type ProgressRule =
   | 'repeat' // fewer than 3 straight sets last time, so do it again
   | 'no-history' // never trained this band
 
+/** The straight sets of one prescribed session: `straightSets` sets of `reps` at `load`. */
 export interface PlanSet {
-  kind: 'straight' | 'top'
   load: number
   reps: number
 }
@@ -209,9 +184,8 @@ export interface Prescription {
   lastBand: RepBand | null
   lastDateKey: string | null
   rule: ProgressRule
-  /** The session to perform: 3 straight sets then 1 top set. Empty when there's no history
-   *  in the band. */
-  plan: PlanSet[]
+  /** The session to perform: 3 straight sets. Null when there's no history in the band. */
+  plan: PlanSet | null
   /** The session this was progressed from, so a stale reference is visible. */
   reference: DayWork | null
 }
@@ -221,14 +195,14 @@ export interface Prescription {
  *
  * Given the band's most recent session: an unfinished session is repeated, a session that
  * reached the top of the band earns a plate step at the bottom of the band, and anything
- * else holds the load and adds one rep. The top set follows from the prescribed load.
+ * else holds the load and adds one rep.
  */
 export function prescribeBand(
   band: RepBand,
   reference: DayWork | null,
   config: EngineConfig = DEFAULT_ENGINE_CONFIG,
-): { rule: ProgressRule; plan: PlanSet[] } {
-  if (!reference) return { rule: 'no-history', plan: [] }
+): { rule: ProgressRule; plan: PlanSet | null } {
+  if (!reference) return { rule: 'no-history', plan: null }
 
   const [lo, hi] = BANDS[band]
   const clamp = (n: number) => Math.max(lo, Math.min(hi, n))
@@ -251,24 +225,7 @@ export function prescribeBand(
     reps = clamp(reference.achieved + 1)
   }
 
-  return {
-    rule,
-    plan: [
-      { kind: 'straight', load, reps },
-      { kind: 'top', load: topSetLoad(load, band, config), reps: config.topReps },
-    ],
-  }
-}
-
-/**
- * The top set's load, derived from the straight-set load by the band's factor.
- *
- * The floor matters at light loads: on the heavy band the factor is only 1.05x, which
- * snaps back onto the straight-set load itself at 20 and 22.5 kg. Without the floor the
- * card would print a "top set" that is a fourth identical set.
- */
-export function topSetLoad(load: number, band: RepBand, config: EngineConfig = DEFAULT_ENGINE_CONFIG): number {
-  return Math.max(snap(load / TOP_FACTOR[band], config.increment), load + config.increment)
+  return { rule, plan: { load, reps } }
 }
 
 /** What to do next for one lift. */

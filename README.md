@@ -14,8 +14,8 @@ what to lift next. Static site, no backend, free on GitHub Pages.
 > the codebase — not plotted, not printed, and not inside the engine either.
 
 - **Big 4 total & PR cards** — each lift's heaviest set to date, and the four summed.
-- **Next session** — per lift, 3 straight sets in a rep band plus 1 top set, with the session it
-  progressed from. No warmup ramp; warmups are yours to judge.
+- **Next session** — per lift, 3 straight sets in a rep band, with the session it progressed from.
+  No warmup ramp; warmups are yours to judge.
 - **Session log** — every exercise, set, and volume per workout, latest already open.
 - **Heaviest set lifted** — the headline chart, with an **All / BP / SQ / DL / OHP** scope
   selector. The per-lift view drills into the individual sets you performed.
@@ -34,8 +34,8 @@ palette and are checked with a colour-vision validator, per theme, before they s
 
 Daily undulating periodization with double progression. Each lift rotates **heavy (3–5) → volume
 (10–12) → moderate (6–9)** off its own last session, and keeps one progression track per band.
-Complete three sets at the top of a band and the load goes up 2.5 kg; otherwise add a rep. The top set
-is 2 reps at the straight-set load divided by 0.95, 0.90 or 0.85 depending on the band.
+Complete three sets at the top of a band and the load goes up 2.5 kg; otherwise add a rep. That is
+the whole prescription: three sets, one load, one rep count.
 
 There are no goals and no deload rule. A track you have not trained in weeks still gets its plate
 step, and the card shows you how old the reference is rather than adjusting behind your back.
