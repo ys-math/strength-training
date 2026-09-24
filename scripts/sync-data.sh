@@ -34,6 +34,16 @@ cd "$REPO_DIR" || { log "ERROR: cannot cd to $REPO_DIR"; exit 1; }
 # Retry a previously-failed push before looking at new data — otherwise a commit
 # that landed locally but failed to push would look like "no change" forever.
 git fetch -q origin main 2>/dev/null
+# CI pushes its own commits (the README screenshot refresh after every sync), so
+# origin/main routinely moves past the local branch. Rebase onto it first, or
+# every later push is rejected as non-fast-forward and the retry below loops forever.
+if [ "$(git rev-list --count HEAD..origin/main 2>/dev/null || echo 0)" -gt 0 ]; then
+  if ! git rebase -q --autostash origin/main >/dev/null 2>&1; then
+    git rebase --abort 2>/dev/null
+    log "ERROR: could not rebase onto origin/main — resolve by hand"
+    exit 1
+  fi
+fi
 ahead=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
 if [ "${ahead:-0}" -gt 0 ]; then
   if git push -q origin main; then
